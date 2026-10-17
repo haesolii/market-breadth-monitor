@@ -214,7 +214,7 @@ def research_day(date: dt.date, benchmark: str = "^GSPC"):
 def scan_dates():
     if remote.ON:  # precomputed recent sessions only
         h = store.read("scan_hits")
-        return {s: sorted({str(d) for d in g["date"]}) for s, g in h.groupby("source")} if len(h) else {}
+        return {s: sorted({str(d)[:10] for d in g["date"]}) for s, g in h.groupby("source")} if len(h) else {}
     out = {}
     for s in ("massive", *universes.UNIVERSES):
         b = store.read("breadth20")
@@ -230,9 +230,10 @@ def scan(date: dt.date | None = None, source: str | None = None):
     if remote.ON:
         h = store.read("scan_hits")
         source = source or "yahoo"
-        h = h[h["source"] == source] if len(h) else h
+        h = h[h["source"] == source].copy() if len(h) else h
         if h.empty:
             raise HTTPException(404, f"'{source}' 종목 검색 데이터가 없습니다.")
+        h["date"] = pd.to_datetime(h["date"]).dt.date
         date = date or max(h["date"])
         hits = h[h["date"] == date].drop(columns=["source"])
     else:

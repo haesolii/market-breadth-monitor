@@ -26,7 +26,11 @@ def _scan_table() -> pd.DataFrame:
         dates = sorted(b.loc[b["source"] == src, "date"])[-SCAN_SESSIONS:] if len(b) else []
         for d in dates:
             frames.append(refresh.scan_hits(src, d).assign(source=src))
-    return pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
+    if not frames:
+        return pd.DataFrame()
+    out = pd.concat(frames, ignore_index=True)
+    out["date"] = pd.to_datetime(out["date"]).dt.date  # a date column, not a timestamp
+    return out
 
 
 def pull_config() -> None:

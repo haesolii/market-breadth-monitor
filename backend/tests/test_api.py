@@ -1,0 +1,33 @@
+import datetime as dt
+
+import pandas as pd
+from fastapi.testclient import TestClient
+
+from app import main, store
+
+
+def test_api_no_data_and_errors():
+    c = TestClient(main.app)  # no context manager -> auto-refresh thread not started
+    assert c.get("/api/breadth20").status_code == 404              # no data yet -> explicit 404, never fake numbers
+    assert c.get("/api/research").status_code == 404
+    assert c.post("/api/reference", json={"date": "2024-01-02", "metric": "nope", "value": 1}).status_code == 400
+
+
+def test_api_real_rows():
+    d = [dt.date(2024, 1, 2) + dt.timedelta(days=i) for i in range(30)]
+    store.upsert("breadth20", pd.DataFrame({"date": d, "bull": 1.0, "bear": range(30), "source": "yahoo"}), ["source", "date"])
+    store.upsert("indices", pd.DataFrame({"date": d, "symbol": "^GSPC", "close": [100.0 + i for i in range(30)]}), ["symbol", "date"])
+    c = TestClient(main.app)
+    j = c.get("/api/breadth20").json()
+    assert j["source"] == "yahoo" and len(j["rows"]) == 30
+    r = c.get("/api/research?metric=bear&threshold=25").json()
+    assert r["n_events"] == 5 and r["stats"]["1"]["n"] == 4
+    day = c.get(f"/api/day?date={d[10]}").json()
+    assert day["breadth20"]["yahoo"]["bear_chg5"] == 5 and "r1" not in str(day)  # no forward returns
+
+
+def test_world_config_rejects_bad_text():
+    c = TestClient(main.app)
+    bad = rb'[{"symbol": "^GSPC", "name": "\udceb", "region": "x"}]'  # lone surrogate, as a cp949 pipe produces
+    assert c.post("/api/world/config", content=bad, headers={"Content-Type": "application/json"}).status_code == 400
+    assert c.post("/api/world/config", json=[{"symbol": " ", "name": "x"}]).status_code == 400

@@ -1,0 +1,307 @@
+"""FastAPI backend: http://localhost:8000 (the Next.js app proxies /api/* here)."""
+import datetime as dt
+import threading
+from contextlib import asynccontextmanager
+
+import duckdb
+import pandas as pd
+from fastapi import BackgroundTasks, FastAPI, HTTPException, Query
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+
+from . import indicators, refresh, research, store, universes, validation, world
+from .config import MASSIVE_API_KEY, YAHOO_SCANNER
+from .indicators import MM_COLS
+from .market_calendar import latest_complete_session
+
+SOURCE_INFO = {
+    "massive": {"label": "Massive (자체 계산, 생존편향 없음)", "real": True, "tickers": True},
+    "public_repo": {"label": "미국 전체 보통주 (상장폐지 포함)", "short": "미국 전체 (상장폐지 포함)", "real": True, "tickers": False},
+    **{k: {"label": v["label"], "short": v["short"], "real": True, "tickers": True, "market": True,
+           "cal": v["cal"], "benchmark": v["benchmark"], "etf": v["etf"], "params": v["params"]}
+       for k, v in universes.describe().items()},
+}
+
+_stop = threading.Event()
+
+
+@asynccontextmanager
+async def lifespan(_app):
+    t = threading.Thread(target=refresh.auto_loop, args=(_stop,), daemon=True, name="auto-refresh")
+    t.start()
+    yield
+    _stop.set()
+
+
+app = FastAPI(title="Market Breadth Monitor", lifespan=lifespan)
+app.add_middleware(CORSMiddleware, allow_origins=["http://localhost:3000"], allow_methods=["*"], allow_headers=["*"])
+
+
+def records(df: pd.DataFrame) -> list[dict]:
+    df = df.copy()
+    for c in df.columns:
+        if c == "date" or df[c].dtype == object:
+            df[c] = df[c].map(lambda v: v.isoformat() if isinstance(v, (dt.date, pd.Timestamp)) else v)
+    return df.astype(object).where(df.notna(), None).to_dict("records")
+
+
+def available(table: str) -> list[str]:
+    df = store.read(table)
+    return sorted(df["source"].unique().tolist()) if len(df) else []
+
+
+def default_source(table: str) -> str | None:
+    av = available(table)
+    for s in ("massive", "public_repo", "yahoo") if table == "breadth20" else ("massive", "yahoo", "nasdaq", "kospi", "kosdaq"):
+        if s in av:
+            return s
+    return None
+
+
+def table_for(table: str, source: str | None) -> tuple[str, pd.DataFrame]:
+    source = source or default_source(table)
+    df = store.read(table)
+    if source is None or df.empty or source not in set(df["source"]):
+        raise HTTPException(404, "데이터가 아직 없습니다 — 수집 중이면 잠시 후 다시 확인하세요 (데이터 관리 메뉴에서 진행 상황 확인)")
+    return source, df[df["source"] == source].sort_values("date").reset_index(drop=True)
+
+
+# ---- endpoints ------------------------------------------------------------------
+@app.get("/api/status")
+def status():
+    st = store.status()
+    out = {"expected_session": str(latest_complete_session()), "busy": refresh.is_busy(),
+           "enabled": refresh.enabled_sources(), "massive_key": bool(MASSIVE_API_KEY), "yahoo_scanner": YAHOO_SCANNER,
+           "sources": {}, "log": st.get("log", [])[:50], "scheduler": st["sources"].get("_scheduler"),
+           "breadth20_sources": available("breadth20"), "monitor_sources": available("market_monitor_daily"),
+           "default_breadth20": default_source("breadth20"), "default_monitor": default_source("market_monitor_daily"),
+           "source_info": SOURCE_INFO,
+           "expected_sessions": {c: str(latest_complete_session(cal=c)) for c in ("NYSE", "XKRX")}}
+    enabled = refresh.enabled_sources()
+    for s in ["indices", "public_repo", "yahoo", "nasdaq", "kospi", "kosdaq", "massive"]:
+        ld = refresh.latest_date(s)
+        derived = universes.UNIVERSES.get(s, {}).get("derived_from")
+        out["sources"][s] = {**st["sources"].get(s, {}), "latest_date": str(ld) if ld else None,
+                             "expected": str(latest_complete_session(cal=universes.cal_of(s))),
+                             "enabled": s in enabled or derived in enabled, "derived_from": derived}
+    return out
+
+
+@app.post("/api/refresh")
+def do_refresh(bg: BackgroundTasks, source: str | None = None):
+    if refresh.is_busy():
+        return {"started": False, "reason": "이미 갱신 중입니다 (refresh already running)"}
+    srcs = [source] if source else None
+    if source and source not in refresh.REFRESHERS:
+        raise HTTPException(400, "unknown source")
+    bg.add_task(refresh.refresh, srcs)
+    return {"started": True}
+
+
+@app.get("/api/breadth20")
+def breadth20(source: str | None = None):
+    source, df = table_for("breadth20", source)
+    cols = [c for c in ["date", "bull", "bear", "elig_20", "eligible_universe_count"] if c in df]
+    return {"source": source, "rows": records(df[cols])}
+
+
+@app.get("/api/monitor")
+def monitor(source: str | None = None):
+    source, df = table_for("market_monitor_daily", source)
+    b20 = store.read("breadth20")
+    if len(b20):
+        df = df.merge(b20[b20["source"] == source][["date", "bull", "bear"]], on="date", how="left")
+    cols = [c for c in df.columns if c not in ("source",)]
+    return {"source": source, "rows": records(df[cols])}
+
+
+@app.get("/api/day")
+def day(date: dt.date, source: str | None = None, mm_source: str | None = None):
+    """Snapshot for one date: values + 5/10-session changes. No forward returns here."""
+    out = {"date": str(date), "breadth20": {}, "monitor": None}
+    for s in available("breadth20"):
+        _, df = table_for("breadth20", s)
+        i = df.index[df["date"] == date]
+        if len(i):
+            k = i[0]
+            row = {"bull": df.at[k, "bull"], "bear": df.at[k, "bear"]}
+            for n in (5, 10):
+                if k - n >= 0:
+                    row[f"bull_chg{n}"] = df.at[k, "bull"] - df.at[k - n, "bull"]
+                    row[f"bear_chg{n}"] = df.at[k, "bear"] - df.at[k - n, "bear"]
+            out["breadth20"][s] = {k2: (None if pd.isna(v) else float(v)) for k2, v in row.items()}
+    try:
+        ms, mm = table_for("market_monitor_daily", mm_source)
+        i = mm.index[mm["date"] == date]
+        if len(i):
+            k = i[0]
+            cur = mm.loc[k, MM_COLS]
+            out["monitor"] = {"source": ms, "values": records(mm.loc[[k]])[0]}
+            for n in (5, 10):
+                if k - n >= 0:
+                    prev = mm.loc[k - n, MM_COLS]
+                    out["monitor"][f"chg{n}"] = {c: (None if pd.isna(cur[c]) or pd.isna(prev[c]) else float(cur[c] - prev[c])) for c in MM_COLS}
+    except HTTPException:
+        pass
+    return out
+
+
+@app.get("/api/research")
+def research_study(source: str | None = None, metric: str = "bear", threshold: float = 100, op: str = ">=",
+                   mode: str = "independent", gap: int = Query(5, ge=1, le=60),
+                   start: dt.date | None = None, end: dt.date | None = None, benchmark: str | None = None):
+    table = "breadth20" if metric in ("bull", "bear") else "market_monitor_daily"
+    if table == "market_monitor_daily" and metric not in MM_COLS:
+        raise HTTPException(400, "unknown metric")
+    source, df = table_for(table, source if source in available(table) else None)
+    s = df[["date", metric]].rename(columns={metric: "value"})
+    if start:
+        s = s[s["date"] >= start]
+    if end:
+        s = s[s["date"] <= end]
+    benchmark = benchmark or universes.benchmark_of(source)
+    res = research.study(s, benchmark_prices(benchmark), threshold, op, mode, gap)
+    return {"source": source, "metric": metric, "threshold": threshold, "op": op, "mode": mode, "gap": gap,
+            "benchmark": benchmark, **res}
+
+
+def benchmark_prices(symbol: str) -> pd.DataFrame:
+    """(date, close) of a symbol in the world-index table."""
+    df = store.read("indices")
+    df = df[df["symbol"] == symbol][["date", "close"]] if len(df) else df
+    if df.empty:
+        raise HTTPException(404, f"벤치마크 '{symbol}' 데이터가 없습니다 (세계 지수 목록에 추가 후 갱신하세요)")
+    return df
+
+
+@app.get("/api/benchmarks")
+def benchmarks():
+    idx = store.read("indices")
+    names = {**world.ETF_BENCH, **{it["symbol"]: it["name"] for it in world.config()}}
+    listed = [it["symbol"] for it in world.config()] + list(world.ETF_BENCH)
+    have = set(idx["symbol"]) if len(idx) else set()
+    syms = [s for s in listed if s in have]
+    return [{"symbol": s, "name": names.get(s, s)} for s in syms]
+
+
+@app.get("/api/research/day")
+def research_day(date: dt.date, benchmark: str = "^GSPC"):
+    """Forward benchmark returns from one date (historical research screen only)."""
+    fr = research.forward_returns(benchmark_prices(benchmark))
+    r = fr[fr["date"] == date]
+    if r.empty:
+        raise HTTPException(404, f"해당 날짜의 {benchmark} 데이터 없음")
+    return records(r)[0]
+
+
+@app.get("/api/scan/dates")
+def scan_dates():
+    out = {}
+    for s in ("massive", *universes.UNIVERSES):
+        b = store.read("breadth20")
+        if len(b) and s in set(b["source"]):
+            out[s] = [str(d) for d in sorted(b.loc[b["source"] == s, "date"])[-400:]]
+    return out
+
+
+@app.get("/api/scan")
+def scan(date: dt.date | None = None, source: str | None = None):
+    if source not in (None, "massive", *universes.UNIVERSES):
+        raise HTTPException(400, "종목 단위 결과는 자체 계산 소스(미국 전체·나스닥·코스피·코스닥·massive)만 제공됩니다")
+    b = store.read("breadth20")
+    have = set(b["source"]) if len(b) else set()
+    source = source or ("massive" if "massive" in have else "yahoo")
+    if source not in have:
+        raise HTTPException(404, f"'{source}' 데이터가 없습니다. 데이터 관리에서 갱신하세요.")
+    date = date or max(b.loc[b["source"] == source, "date"])
+    lo = date - dt.timedelta(days=130)  # >= 65 sessions of history for the quarter window
+    if source in universes.UNIVERSES:
+        cfg = universes.UNIVERSES[source]
+        u = store.read(f"universe_{cfg.get('derived_from', source)}")
+        u = u[u["excluded_reason"] == ""]
+        if cfg.get("exchange"):
+            u = u[u["exchange"] == cfg["exchange"]]
+        rel = f"read_parquet('{store.path(cfg['bars']).as_posix()}')"
+        bars = duckdb.sql(f"SELECT date, ticker, close, volume FROM {rel} WHERE date BETWEEN DATE '{lo}' AND DATE '{date}'").df()
+    else:
+        from .collectors import massive
+        u = store.read("universe_massive")
+        bars = massive.cached_bars()
+        bars = bars[(bars["date"] >= lo) & (bars["date"] <= date)]
+        bars = massive.adjust_for_splits(bars, massive.splits(massive.Client(), str(lo)))
+    bars = bars[bars["ticker"].isin(set(u["ticker"]))]
+    hits = indicators.scan(bars, date, universes.params_of(source))
+    hits = hits.merge(u[["ticker", "name", "exchange"]], on="ticker", how="left")
+    hits["date"] = hits["date"].astype(str)
+    return {"source": source, "date": str(date), "rows": records(hits.sort_values("ret5", ascending=False))}
+
+
+@app.get("/api/validation")
+def get_validation():
+    return {**validation.report(), "reference": validation.compare_reference()}
+
+
+class RefIn(BaseModel):
+    date: dt.date
+    metric: str
+    value: float
+    note: str = ""
+
+
+@app.post("/api/reference")
+def add_reference(r: RefIn):
+    if r.metric not in validation.REF_METRICS:
+        raise HTTPException(400, f"metric must be one of {validation.REF_METRICS}")
+    store.upsert("manual_reference", pd.DataFrame([{**r.model_dump(), "entered_at": store.now_utc()}]), ["date", "metric"])
+    return {"ok": True}
+
+
+@app.delete("/api/reference")
+def delete_reference(date: dt.date, metric: str):
+    ref = store.read("manual_reference")
+    if len(ref):
+        store.write("manual_reference", ref[~((ref["date"] == date) & (ref["metric"] == metric))])
+    return {"ok": True}
+
+
+# ---- world indices ------------------------------------------------------------
+@app.get("/api/world")
+def world_summary(z: float = Query(2.0, gt=0, le=10), dd: float = Query(10.0, gt=0, le=90)):
+    st = store.status()["sources"].get("indices", {})
+    return {**world.summary(z, dd), "last_success": st.get("last_success"), "last_error": st.get("last_error")}
+
+
+@app.get("/api/world/history")
+def world_history(symbols: str, ohlc: bool = False):
+    return world.history([s for s in symbols.split(",") if s], ohlc)
+
+
+class IndexIn(BaseModel):
+    symbol: str
+    name: str
+    region: str = "기타"
+
+
+@app.get("/api/world/config")
+def world_config():
+    return {"items": world.config(), "defaults": [{"symbol": s, "name": n, "region": r} for s, n, r in world.DEFAULT]}
+
+
+@app.post("/api/world/config")
+def world_set_config(items: list[IndexIn], bg: BackgroundTasks):
+    known = {it["symbol"] for it in world.config()}
+    for it in items:
+        try:
+            (it.symbol + it.name + it.region).encode("utf-8")
+        except UnicodeEncodeError:
+            raise HTTPException(400, f"잘못된 문자 인코딩입니다 (UTF-8 아님): {it.symbol!r}")
+        if not it.symbol.strip() or not it.name.strip():
+            raise HTTPException(400, "심볼과 이름은 비울 수 없습니다")
+        if it.symbol not in known:  # validate new symbols before saving
+            try:
+                world.chart(it.symbol)
+            except Exception as e:  # noqa: BLE001
+                raise HTTPException(400, f"'{it.symbol}' 데이터를 가져올 수 없습니다: {e}")
+    world.save_config([i.model_dump() for i in items])
+    bg.add_task(refresh.refresh, ["indices"])
+    return {"ok": True}

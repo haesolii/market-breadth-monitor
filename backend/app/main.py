@@ -3,16 +3,17 @@ import datetime as dt
 import hashlib
 import hmac
 import os
+import urllib.parse
 import threading
 from contextlib import asynccontextmanager
 
 import pandas as pd
 from fastapi import BackgroundTasks, FastAPI, HTTPException, Query, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-from . import indicators, macro, refresh, remote, research, store, universes, validation, world
+from . import indicators, macro, refresh, remote, research, store, universes, usage, validation, world
 from .config import MASSIVE_API_KEY, YAHOO_SCANNER
 from .indicators import MM_COLS
 from .market_calendar import latest_complete_session
@@ -46,9 +47,28 @@ _TOKEN = hashlib.sha256(f"{_PW}:mb".encode()).hexdigest() if _PW else ""
 
 @app.middleware("http")
 async def require_login(request: Request, call_next):
+    if request.url.path == "/api/login":
+        return await call_next(request)
     if _TOKEN and not hmac.compare_digest(request.cookies.get("mb_auth", ""), _TOKEN):
         return JSONResponse({"detail": "로그인이 필요합니다"}, status_code=401)
+    if request.url.path == "/api/status":  # once per page view (+ status-bar polling, deduped)
+        usage.record_visit(request)
     return await call_next(request)
+
+
+@app.post("/api/login")
+async def login(request: Request):
+    """Form post from /login: sets the auth cookie and records the attempt (for the daily report)."""
+    form = urllib.parse.parse_qs((await request.body()).decode())
+    nxt = (form.get("next") or ["/"])[0]
+    nxt = nxt if nxt.startswith("/") and not nxt.startswith("//") else "/"
+    ok = bool(_PW) and hmac.compare_digest((form.get("password") or [""])[0], _PW)
+    usage.record_login(request, ok)
+    if not ok:
+        return RedirectResponse(f"/login?error=1&next={urllib.parse.quote(nxt)}", status_code=303)
+    res = RedirectResponse(nxt, status_code=303)
+    res.set_cookie("mb_auth", _TOKEN, max_age=60 * 60 * 24 * 30, httponly=True, secure=True, samesite="lax")
+    return res
 
 
 def records(df: pd.DataFrame) -> list[dict]:

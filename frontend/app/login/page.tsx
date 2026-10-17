@@ -2,7 +2,7 @@ export default async function Login({ searchParams }: { searchParams: Promise<{ 
   const { next = "/", error } = await searchParams;
   return (
     <div className="flex min-h-screen items-center justify-center">
-      <form method="post" action="/auth/login" className="w-80 space-y-3 rounded border border-zinc-800 bg-zinc-950 p-6">
+      <form method="post" action="/api/login" className="w-80 space-y-3 rounded border border-zinc-800 bg-zinc-950 p-6">
         <div className="font-mono text-sm font-bold text-emerald-400">MARKET BREADTH</div>
         <input type="hidden" name="next" value={next} />
         <input type="password" name="password" autoFocus placeholder="비밀번호" required

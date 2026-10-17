@@ -43,3 +43,14 @@ def test_password_gate(monkeypatch):
     assert c.get("/api/status").status_code == 401
     c.cookies.set("mb_auth", token)
     assert c.get("/api/status").status_code == 200
+
+
+def test_login_endpoint(monkeypatch):
+    import hashlib
+    monkeypatch.setattr(main, "_PW", "pw")
+    monkeypatch.setattr(main, "_TOKEN", hashlib.sha256(b"pw:mb").hexdigest())
+    c = TestClient(main.app, follow_redirects=False)
+    bad = c.post("/api/login", content="password=nope&next=/monitor", headers={"Content-Type": "application/x-www-form-urlencoded"})
+    assert bad.status_code == 303 and bad.headers["location"].startswith("/login?error=1") and "mb_auth" not in bad.cookies
+    ok = c.post("/api/login", content="password=pw&next=//evil.com", headers={"Content-Type": "application/x-www-form-urlencoded"})
+    assert ok.status_code == 303 and ok.headers["location"] == "/" and ok.cookies.get("mb_auth") == main._TOKEN

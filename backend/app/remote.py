@@ -19,12 +19,21 @@ CACHE_SECONDS = 600  # data changes twice a day (after each publish)
 
 _cache: dict[str, tuple[float, object]] = {}
 _lock = threading.Lock()
+_loading: dict[str, threading.Lock] = {}
+
+
+def _url() -> str:
+    """Serverless (Vercel) uses Supabase's transaction pooler (port 6543): the session
+    pooler (5432) allows only 15 clients and a dashboard page fires dozens of requests."""
+    if os.getenv("VERCEL") and "pooler.supabase.com:5432" in DB_URL:
+        return DB_URL.replace("pooler.supabase.com:5432", "pooler.supabase.com:6543")
+    return DB_URL
 
 
 def _connect():
     import psycopg  # only needed when Supabase is configured
 
-    return psycopg.connect(DB_URL, autocommit=False, prepare_threshold=None)
+    return psycopg.connect(_url(), autocommit=False, prepare_threshold=None)  # no prepared stmts: pooler-safe
 
 
 def _q(name: str) -> str:
@@ -39,6 +48,16 @@ def read_table(name: str) -> pd.DataFrame:
     hit = _cache.get("t:" + name)
     if hit and time.time() - hit[0] < CACHE_SECONDS:
         return hit[1]  # type: ignore[return-value]
+    with _lock:
+        loader = _loading.setdefault(name, threading.Lock())
+    with loader:  # concurrent requests for the same table share one download
+        hit = _cache.get("t:" + name)
+        if hit and time.time() - hit[0] < CACHE_SECONDS:
+            return hit[1]  # type: ignore[return-value]
+        return _load(name)
+
+
+def _load(name: str) -> pd.DataFrame:
     with _connect() as con, con.cursor() as cur:
         cur.execute("SELECT to_regclass(%s)", (name,))
         if cur.fetchone()[0] is None:

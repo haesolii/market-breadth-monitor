@@ -232,7 +232,8 @@ def _curve_flag(rows: list[dict]) -> None:
 def correlation(df: pd.DataFrame, days: int = 60) -> dict:
     if df.empty:
         return {"symbols": [], "matrix": []}
-    syms = [it["symbol"] for it in config() if it["symbol"] in set(df["symbol"])]
+    have = set(df["symbol"].unique())
+    syms = [it["symbol"] for it in config() if it["symbol"] in have]
     w = df.pivot_table(index="date", columns="symbol", values="close").sort_index()[syms]
     rets = w.pct_change(fill_method=None).tail(days)
     cm = rets.corr(min_periods=int(days * 0.6)).round(2)

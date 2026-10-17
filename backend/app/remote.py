@@ -15,7 +15,7 @@ import pandas as pd
 
 DB_URL = os.getenv("SUPABASE_DB_URL", "").strip()
 ON = os.getenv("STORE", "") == "supabase" and bool(DB_URL)
-CACHE_SECONDS = 60
+CACHE_SECONDS = 600  # data changes twice a day (after each publish)
 
 _cache: dict[str, tuple[float, object]] = {}
 _lock = threading.Lock()

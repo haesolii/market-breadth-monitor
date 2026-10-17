@@ -4,11 +4,22 @@ jobs:
   probe:
     runs-on: ubuntu-latest
     steps:
-      - run: |
-          for u in "https://api.stlouisfed.org/fred/series/observations?series_id=UNRATE&file_type=json" "https://fred.stlouisfed.org/graph/fredgraph.csv?id=UNRATE"; do
-            echo "== $u"; curl -s -m 20 -o /dev/null -w "http=%{http_code} time=%{time_total}\n" "$u" || echo "curl failed ($?)"
-          done
-      - env:
-          URL: ${{ secrets.SUPABASE_DB_URL }}
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install -q requests
+      - shell: python
         run: |
-          host=$(echo "$URL" | sed -E 's#.*@([^:/]+).*#\1#'); echo "db host: $host"
+          import time, requests, concurrent.futures as cf
+          U = "https://fred.stlouisfed.org/graph/fredgraph.csv"
+          ids = ["CPIAUCSL","UNRATE","PAYEMS","ICSA","DGS10","T10Y2Y","INDPRO","NFCI"]
+          def get(sid, ua):
+              t = time.time()
+              try:
+                  r = requests.get(U, params={"id": sid}, headers={"User-Agent": ua} if ua else {}, timeout=20)
+                  return f"{sid}:{r.status_code}:{time.time()-t:.1f}s"
+              except Exception as e:
+                  return f"{sid}:ERR {type(e).__name__}:{time.time()-t:.1f}s"
+          for label, ua in [("default-ua", None), ("our-ua", "Mozilla/5.0 (breadth personal research)")]:
+              print(label, "serial:", [get(s, ua) for s in ids[:3]])
+              with cf.ThreadPoolExecutor(8) as ex:
+                  print(label, "parallel8:", list(ex.map(lambda s: get(s, ua), ids)))

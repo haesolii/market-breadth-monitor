@@ -1,6 +1,7 @@
 """Exchange trading calendars (holidays, early closes, DST) via pandas_market_calendars."""
 import datetime as dt
 import functools
+import threading
 import warnings
 from zoneinfo import ZoneInfo
 
@@ -11,6 +12,9 @@ ET = ZoneInfo("America/New_York")
 # Close is 16:00 ET / 15:30 KST; the buffer covers late prints and provider publishing lag.
 CALENDARS = {"NYSE": (ET, 18), "XKRX": (ZoneInfo("Asia/Seoul"), 18)}
 FINAL_HOUR_ET = 18
+# pandas_market_calendars builds holidays lazily and is not thread-safe on first use
+# (concurrent API requests on a cold server crashed with '_holidays' AttributeError).
+_lock = threading.Lock()
 
 
 @functools.lru_cache(maxsize=None)
@@ -21,7 +25,9 @@ def _cal(name: str):
 
 
 def sessions(start: dt.date, end: dt.date, cal: str = "NYSE") -> list[dt.date]:
-    return [d.date() for d in _cal(cal).valid_days(start, end)]
+    with _lock:
+        days = _cal(cal).valid_days(start, end)
+    return [d.date() for d in days]
 
 
 def latest_complete_session(now: dt.datetime | None = None, cal: str = "NYSE") -> dt.date:

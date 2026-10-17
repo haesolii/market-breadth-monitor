@@ -25,3 +25,13 @@ def test_cluster_vs_independent():
     clu = research.study(series, s, 100, ">=", "cluster", gap=5)
     assert ind["n_events"] == 4 and clu["n_events"] == 2
     assert ind["stats"][20]["n"] == 3                 # day 20 has no +20 session data -> excluded
+
+
+def test_calendar_thread_safe():
+    import concurrent.futures as cf
+    import datetime as dt
+    from app import market_calendar as mc
+    mc._cal.cache_clear()  # cold calendars, many concurrent first uses
+    with cf.ThreadPoolExecutor(8) as ex:
+        res = list(ex.map(lambda c: mc.latest_complete_session(cal=c), ["XKRX", "NYSE"] * 8))
+    assert all(isinstance(r, dt.date) for r in res)

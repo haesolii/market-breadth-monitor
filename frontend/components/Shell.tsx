@@ -12,8 +12,9 @@ const MENU = [
   ["/research", "4. 과거 시장 통계", "Historical Research"],
   ["/scanner", "5. 조건 충족 종목 검색", "Scanner Results"],
   ["/world", "6. 세계 지수", "World Indices"],
-  ["/board", "7. 차트 보드", "Chart Board"],
-  ["/data", "8. 데이터 관리 및 설정", "Data & Settings"],
+  ["/macro", "7. 매크로", "Macro"],
+  ["/board", "8. 차트 보드", "Chart Board"],
+  ["/data", "9. 데이터 관리 및 설정", "Data & Settings"],
 ];
 
 export const localTime = (iso?: string | null) => (iso ? new Date(iso).toLocaleString("ko-KR", { hour12: false }) : "—");

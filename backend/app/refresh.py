@@ -8,7 +8,7 @@ import traceback
 
 import pandas as pd
 
-from . import indicators, store, universes, world
+from . import indicators, macro, store, universes, world
 from .collectors import massive, public, yahoo
 from .config import KR_SCANNER, MASSIVE_API_KEY, MASSIVE_START, REFRESH_INTERVAL_MIN, YAHOO_HISTORY, YAHOO_SCANNER
 from .market_calendar import latest_complete_session, sessions
@@ -17,13 +17,13 @@ _busy = threading.Lock()
 
 
 def enabled_sources() -> list[str]:
-    return (["public_repo", "indices"] + (["yahoo"] if YAHOO_SCANNER else [])
+    return (["public_repo", "indices", "macro"] + (["yahoo"] if YAHOO_SCANNER else [])
             + (["kospi", "kosdaq"] if KR_SCANNER else []) + (["massive"] if MASSIVE_API_KEY else []))
 
 
 def latest_date(source: str):
-    if source == "indices":
-        df = store.read("indices")
+    if source in ("indices", "macro"):
+        df = store.read(source)
     else:
         df = store.read("breadth20")
         df = df[df["source"] == source] if len(df) else df
@@ -133,7 +133,7 @@ def refresh_massive() -> dict:
     return {**res, "skipped_sessions": len(skipped), "tickers": int(bars["ticker"].nunique())}
 
 
-REFRESHERS = {"indices": world.refresh, "public_repo": refresh_public,
+REFRESHERS = {"indices": world.refresh, "macro": macro.refresh, "public_repo": refresh_public,
               "yahoo": lambda: refresh_universe("yahoo"), "kospi": lambda: refresh_universe("kospi"),
               "kosdaq": lambda: refresh_universe("kosdaq"), "massive": refresh_massive}
 
@@ -184,6 +184,11 @@ def _last_ok(source: str) -> float:
     return dt.datetime.fromisoformat(ts).timestamp() if ts else 0.0
 
 
+# Refreshed on a timer instead of against the trading calendar: world markets close at
+# different times (indices) and macro series are released on their own schedules.
+PERIODIC = {"indices": 3600, "macro": 6 * 3600}
+
+
 def auto_loop(stop: threading.Event) -> None:
     """While the server runs: every REFRESH_INTERVAL_MIN, refresh any source whose
     latest date is behind the latest completed NYSE session. A source that did
@@ -191,13 +196,12 @@ def auto_loop(stop: threading.Event) -> None:
     retry_at: dict[str, float] = {}
     while not stop.is_set():
         target = latest_complete_session()
-        stale = [s for s in enabled_sources() if _behind(s) and time.time() >= retry_at.get(s, 0)]
-        # World markets close at different times: refresh indices hourly regardless.
-        if "indices" not in stale and time.time() - _last_ok("indices") >= 3600:
-            stale.append("indices")
+        stale = [s for s in enabled_sources()
+                 if s not in PERIODIC and _behind(s) and time.time() >= retry_at.get(s, 0)]
+        stale += [s for s, every in PERIODIC.items() if time.time() - _last_ok(s) >= every]
         if stale:
             refresh(stale)
-            for s in (x for x in stale if x != "indices"):
+            for s in (x for x in stale if x not in PERIODIC):
                 if _behind(s):
                     retry_at[s] = time.time() + 3600
         store.set_source("_scheduler", last_check=store.now_utc(), target_session=str(target))
@@ -206,7 +210,7 @@ def auto_loop(stop: threading.Event) -> None:
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser(description="Refresh breadth data (used by Task Scheduler).")
-    ap.add_argument("--source", action="append", help="indices|public_repo|yahoo|kospi|kosdaq|massive (default: all enabled)")
+    ap.add_argument("--source", action="append", help="indices|macro|public_repo|yahoo|kospi|kosdaq|massive (default: all enabled)")
     ap.add_argument("--only-stale", action="store_true")
     a = ap.parse_args()
     print(refresh(a.source, a.only_stale))

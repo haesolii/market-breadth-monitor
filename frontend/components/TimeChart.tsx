@@ -28,6 +28,9 @@ export function TimeChart({ dates, series, spy, lines = [], onSelect, selected, 
   ref.current = { dates, onSelect };
   const option = useMemo<EChartsOption>(() => {
     const two = !!spy;
+    // Mirrored (below-zero) series show absolute values; otherwise keep real signs (e.g. negative spreads).
+    const mirrored = series.some((s) => s.mirror);
+    const fmtV = (v: number) => (mirrored ? Math.abs(v) : v).toLocaleString("en-US", { maximumFractionDigits: 2 });
     const grids = two
       ? [{ left: 56, right: 16, top: 40, height: "54%" }, { left: 56, right: 16, top: "70%", bottom: 56 }]
       : [{ left: 56, right: 16, top: 40, bottom: 56 }];
@@ -42,7 +45,7 @@ export function TimeChart({ dates, series, spy, lines = [], onSelect, selected, 
       tooltip: {
         trigger: "axis", axisPointer: { type: "cross", link: [{ xAxisIndex: "all" }] },
         backgroundColor: "#18181b", borderColor: "#3f3f46", textStyle: { color: "#e4e4e7", fontSize: 12 },
-        valueFormatter: (v) => (v === null || v === undefined ? "—" : Math.abs(Number(v)).toLocaleString("en-US", { maximumFractionDigits: 2 })),
+        valueFormatter: (v) => (v === null || v === undefined ? "—" : fmtV(Number(v))),
         // Rebased (=100) series also show % since the start; the lower panel keeps plain values.
         ...(rebased ? {
           formatter: (ps: { axisValue: string; seriesIndex: number; seriesName: string; value: number | null; color: string }[]) =>
@@ -59,7 +62,7 @@ export function TimeChart({ dates, series, spy, lines = [], onSelect, selected, 
       grid: grids,
       xAxis: grids.map((_, i) => axis(i)),
       yAxis: [
-        { type: "value", gridIndex: 0, name: yName, nameGap: 14, nameTextStyle: { color: "#a1a1aa", align: "left" }, axisLabel: { color: "#a1a1aa", formatter: (v: number) => String(Math.abs(v)) }, splitLine: { lineStyle: { color: "#27272a" } } },
+        { type: "value", gridIndex: 0, name: yName, nameGap: 14, nameTextStyle: { color: "#a1a1aa", align: "left" }, axisLabel: { color: "#a1a1aa", formatter: (v: number) => fmtV(v) }, splitLine: { lineStyle: { color: "#27272a" } } },
         ...(two ? [{ type: "value" as const, gridIndex: 1, scale: !lowerBar, axisLabel: { color: "#a1a1aa" }, splitLine: { lineStyle: { color: "#27272a" } } }] : []),
       ],
       dataZoom: [{ type: "inside", xAxisIndex: grids.map((_, i) => i) }, { type: "slider", xAxisIndex: grids.map((_, i) => i), bottom: 8, height: 18, textStyle: { color: "#a1a1aa" } }],

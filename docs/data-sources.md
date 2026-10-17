@@ -95,3 +95,13 @@ TC2000 원본 수치(예: 원문에서 언급된 110)와는 **직접 비교하�
 2. 주가 조정: 하루 +300%/−80% 초과 변동 목록 (분할 미반영 의심)
 3. 데이터 누락: 누락 거래일, 종목 수가 급감한 날
 4. 거래량 조건: 거래량 0/누락 행 수, 최신일 거래량 0 종목 수
+
+## 6. 미국 매크로 (FRED)
+
+- 출처: FRED(세인트루이스 연은) 공개 CSV `fred.stlouisfed.org/graph/fredgraph.csv?id=<series>` — API 키 불필요. 서버 실행 중 6시간마다 갱신.
+- 시리즈(20): CPIAUCSL·CPILFESL·PCEPILFE(전년 대비 %), UNRATE, PAYEMS(전월 대비 증감, 천 명), ICSA(천 건), SAHMREALTIME, FEDFUNDS, DGS2, DGS10, T10Y2Y, T10Y3M,
+  BAMLH0A0HYM2, INDPRO·RSAFS(전년 대비 %), UMCSENT, M2SL(전년 대비 %), WALCL(조 달러), DTWEXBGS, NFCI.
+- 월간 값은 FRED 관례대로 해당 월 1일 날짜 = 그 달의 값(보통 다음 달 발표). 값은 FRED 최신 수정치(발표 당시 값이 아님).
+- 특이사항(참고용, `backend/app/macro.py`): 삼 법칙 ≥ 0.5 경기침체 신호 / ≥ 0.3 주의, 장단기 금리차 < 0, 하이일드 스프레드 1개월 +1%p 이상 또는 5%p 이상,
+  신규 청구 전년 대비 +20% 이상, CPI·근원 CPI·근원 PCE ≥ 4%, 금융여건지수 > 0, 비농업 고용 감소.
+- 한국 매크로(한국은행 ECOS)는 무료 API 키가 필요해 미연결.

@@ -9,7 +9,7 @@ from fastapi import BackgroundTasks, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-from . import indicators, refresh, research, store, universes, validation, world
+from . import indicators, macro, refresh, research, store, universes, validation, world
 from .config import MASSIVE_API_KEY, YAHOO_SCANNER
 from .indicators import MM_COLS
 from .market_calendar import latest_complete_session
@@ -78,7 +78,7 @@ def status():
            "source_info": SOURCE_INFO,
            "expected_sessions": {c: str(latest_complete_session(cal=c)) for c in ("NYSE", "XKRX")}}
     enabled = refresh.enabled_sources()
-    for s in ["indices", "public_repo", "yahoo", "nasdaq", "kospi", "kosdaq", "massive"]:
+    for s in ["indices", "macro", "public_repo", "yahoo", "nasdaq", "kospi", "kosdaq", "massive"]:
         ld = refresh.latest_date(s)
         derived = universes.UNIVERSES.get(s, {}).get("derived_from")
         out["sources"][s] = {**st["sources"].get(s, {}), "latest_date": str(ld) if ld else None,
@@ -305,3 +305,15 @@ def world_set_config(items: list[IndexIn], bg: BackgroundTasks):
     world.save_config([i.model_dump() for i in items])
     bg.add_task(refresh.refresh, ["indices"])
     return {"ok": True}
+
+
+# ---- macro (FRED) ---------------------------------------------------------------
+@app.get("/api/macro")
+def macro_summary():
+    st = store.status()["sources"].get("macro", {})
+    return {**macro.summary(), "last_success": st.get("last_success"), "last_error": st.get("last_error")}
+
+
+@app.get("/api/macro/history")
+def macro_history(ids: str, since: dt.date | None = None):
+    return macro.history([s for s in ids.split(",") if s], since)

@@ -14,7 +14,7 @@ import time
 import numpy as np
 import pandas as pd
 
-from . import store
+from . import remote, store
 from .collectors import http_session
 from .config import DATA
 
@@ -43,12 +43,17 @@ CONFIG = DATA / "indices.json"
 
 
 def config() -> list[dict]:
+    if remote.ON:
+        saved = remote.kv_get("indices_config")
+        return saved or [{"symbol": s, "name": n, "region": r} for s, n, r in DEFAULT]
     if CONFIG.exists():
         return json.loads(CONFIG.read_text("utf-8"))
     return [{"symbol": s, "name": n, "region": r} for s, n, r in DEFAULT]
 
 
 def save_config(items: list[dict]) -> None:
+    if remote.ON:
+        return remote.kv_set("indices_config", items)
     tmp = DATA / ".indices.tmp.json"
     tmp.write_text(json.dumps(items, ensure_ascii=False, indent=1), "utf-8")
     os.replace(tmp, CONFIG)

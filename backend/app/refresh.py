@@ -133,6 +133,27 @@ def refresh_massive() -> dict:
     return {**res, "skipped_sessions": len(skipped), "tickers": int(bars["ticker"].nunique())}
 
 
+def scan_hits(source: str, date) -> pd.DataFrame:
+    """Every stock meeting a scan condition on `date` (needs local bars)."""
+    lo = date - dt.timedelta(days=130)  # >= 65 sessions of history for the quarter window
+    if source in universes.UNIVERSES:
+        cfg = universes.UNIVERSES[source]
+        u = store.read(f"universe_{cfg.get('derived_from', source)}")
+        u = u[u["excluded_reason"] == ""]
+        if cfg.get("exchange"):
+            u = u[u["exchange"] == cfg["exchange"]]
+        rel = f"read_parquet('{store.path(cfg['bars']).as_posix()}')"
+        bars = store.sql(f"SELECT date, ticker, close, volume FROM {rel} WHERE date BETWEEN DATE '{lo}' AND DATE '{date}'")
+    else:
+        u = store.read("universe_massive")
+        bars = massive.cached_bars()
+        bars = bars[(bars["date"] >= lo) & (bars["date"] <= date)]
+        bars = massive.adjust_for_splits(bars, massive.splits(massive.Client(), str(lo)))
+    bars = bars[bars["ticker"].isin(set(u["ticker"]))]
+    hits = indicators.scan(bars, date, universes.params_of(source))
+    return hits.merge(u[["ticker", "name", "exchange"]], on="ticker", how="left")
+
+
 REFRESHERS = {"indices": world.refresh, "macro": macro.refresh, "public_repo": refresh_public,
               "yahoo": lambda: refresh_universe("yahoo"), "kospi": lambda: refresh_universe("kospi"),
               "kosdaq": lambda: refresh_universe("kosdaq"), "massive": refresh_massive}

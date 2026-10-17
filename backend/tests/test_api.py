@@ -31,3 +31,15 @@ def test_world_config_rejects_bad_text():
     bad = rb'[{"symbol": "^GSPC", "name": "\udceb", "region": "x"}]'  # lone surrogate, as a cp949 pipe produces
     assert c.post("/api/world/config", content=bad, headers={"Content-Type": "application/json"}).status_code == 400
     assert c.post("/api/world/config", json=[{"symbol": " ", "name": "x"}]).status_code == 400
+
+
+def test_password_gate(monkeypatch):
+    import hashlib
+    token = hashlib.sha256(b"pw:mb").hexdigest()
+    monkeypatch.setattr(main, "_TOKEN", token)
+    c = TestClient(main.app)
+    assert c.get("/api/status").status_code == 401
+    c.cookies.set("mb_auth", "wrong")
+    assert c.get("/api/status").status_code == 401
+    c.cookies.set("mb_auth", token)
+    assert c.get("/api/status").status_code == 200

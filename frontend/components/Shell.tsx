@@ -69,6 +69,7 @@ export function StatusBar() {
 
 export function Shell({ children }: { children: React.ReactNode }) {
   const path = usePathname();
+  if (path === "/login") return <>{children}</>;
   return (
     <div className="flex min-h-screen flex-col md:flex-row">
       <nav className="shrink-0 border-zinc-800 bg-zinc-950 md:w-56 md:border-r">
@@ -89,6 +90,9 @@ export function Shell({ children }: { children: React.ReactNode }) {
             </li>
           ))}
         </ul>
+        {process.env.NEXT_PUBLIC_AUTH === "1" && (
+          <a href="/auth/logout" className="block px-5 pb-3 text-[11px] text-zinc-500 hover:text-zinc-300">로그아웃</a>
+        )}
       </nav>
       <div className="min-w-0 flex-1">
         <StatusBar />

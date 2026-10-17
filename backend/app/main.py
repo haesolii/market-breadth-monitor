@@ -1,15 +1,18 @@
 """FastAPI backend: http://localhost:8000 (the Next.js app proxies /api/* here)."""
 import datetime as dt
+import hashlib
+import hmac
+import os
 import threading
 from contextlib import asynccontextmanager
 
-import duckdb
 import pandas as pd
-from fastapi import BackgroundTasks, FastAPI, HTTPException, Query
+from fastapi import BackgroundTasks, FastAPI, HTTPException, Query, Request
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-from . import indicators, macro, refresh, research, store, universes, validation, world
+from . import indicators, macro, refresh, remote, research, store, universes, validation, world
 from .config import MASSIVE_API_KEY, YAHOO_SCANNER
 from .indicators import MM_COLS
 from .market_calendar import latest_complete_session
@@ -27,14 +30,25 @@ _stop = threading.Event()
 
 @asynccontextmanager
 async def lifespan(_app):
-    t = threading.Thread(target=refresh.auto_loop, args=(_stop,), daemon=True, name="auto-refresh")
-    t.start()
+    if not remote.ON:  # deployed API is read-only; GitHub Actions refreshes the data
+        threading.Thread(target=refresh.auto_loop, args=(_stop,), daemon=True, name="auto-refresh").start()
     yield
     _stop.set()
 
 
 app = FastAPI(title="Market Breadth Monitor", lifespan=lifespan)
 app.add_middleware(CORSMiddleware, allow_origins=["http://localhost:3000"], allow_methods=["*"], allow_headers=["*"])
+
+# Same single-user password gate as the frontend (cookie set by /auth/login); off when unset (local use).
+_PW = os.getenv("DASHBOARD_PASSWORD", "")
+_TOKEN = hashlib.sha256(f"{_PW}:mb".encode()).hexdigest() if _PW else ""
+
+
+@app.middleware("http")
+async def require_login(request: Request, call_next):
+    if _TOKEN and not hmac.compare_digest(request.cookies.get("mb_auth", ""), _TOKEN):
+        return JSONResponse({"detail": "로그인이 필요합니다"}, status_code=401)
+    return await call_next(request)
 
 
 def records(df: pd.DataFrame) -> list[dict]:
@@ -89,6 +103,8 @@ def status():
 
 @app.post("/api/refresh")
 def do_refresh(bg: BackgroundTasks, source: str | None = None):
+    if remote.ON:
+        return {"started": False, "reason": "서버 버전은 매일 자동 갱신됩니다 (GitHub Actions)"}
     if refresh.is_busy():
         return {"started": False, "reason": "이미 갱신 중입니다 (refresh already running)"}
     srcs = [source] if source else None
@@ -196,6 +212,9 @@ def research_day(date: dt.date, benchmark: str = "^GSPC"):
 
 @app.get("/api/scan/dates")
 def scan_dates():
+    if remote.ON:  # precomputed recent sessions only
+        h = store.read("scan_hits")
+        return {s: sorted({str(d) for d in g["date"]}) for s, g in h.groupby("source")} if len(h) else {}
     out = {}
     for s in ("massive", *universes.UNIVERSES):
         b = store.read("breadth20")
@@ -208,37 +227,31 @@ def scan_dates():
 def scan(date: dt.date | None = None, source: str | None = None):
     if source not in (None, "massive", *universes.UNIVERSES):
         raise HTTPException(400, "종목 단위 결과는 자체 계산 소스(미국 전체·나스닥·코스피·코스닥·massive)만 제공됩니다")
-    b = store.read("breadth20")
-    have = set(b["source"]) if len(b) else set()
-    source = source or ("massive" if "massive" in have else "yahoo")
-    if source not in have:
-        raise HTTPException(404, f"'{source}' 데이터가 없습니다. 데이터 관리에서 갱신하세요.")
-    date = date or max(b.loc[b["source"] == source, "date"])
-    lo = date - dt.timedelta(days=130)  # >= 65 sessions of history for the quarter window
-    if source in universes.UNIVERSES:
-        cfg = universes.UNIVERSES[source]
-        u = store.read(f"universe_{cfg.get('derived_from', source)}")
-        u = u[u["excluded_reason"] == ""]
-        if cfg.get("exchange"):
-            u = u[u["exchange"] == cfg["exchange"]]
-        rel = f"read_parquet('{store.path(cfg['bars']).as_posix()}')"
-        bars = duckdb.sql(f"SELECT date, ticker, close, volume FROM {rel} WHERE date BETWEEN DATE '{lo}' AND DATE '{date}'").df()
+    if remote.ON:
+        h = store.read("scan_hits")
+        source = source or "yahoo"
+        h = h[h["source"] == source] if len(h) else h
+        if h.empty:
+            raise HTTPException(404, f"'{source}' 종목 검색 데이터가 없습니다.")
+        date = date or max(h["date"])
+        hits = h[h["date"] == date].drop(columns=["source"])
     else:
-        from .collectors import massive
-        u = store.read("universe_massive")
-        bars = massive.cached_bars()
-        bars = bars[(bars["date"] >= lo) & (bars["date"] <= date)]
-        bars = massive.adjust_for_splits(bars, massive.splits(massive.Client(), str(lo)))
-    bars = bars[bars["ticker"].isin(set(u["ticker"]))]
-    hits = indicators.scan(bars, date, universes.params_of(source))
-    hits = hits.merge(u[["ticker", "name", "exchange"]], on="ticker", how="left")
+        b = store.read("breadth20")
+        have = set(b["source"]) if len(b) else set()
+        source = source or ("massive" if "massive" in have else "yahoo")
+        if source not in have:
+            raise HTTPException(404, f"'{source}' 데이터가 없습니다. 데이터 관리에서 갱신하세요.")
+        date = date or max(b.loc[b["source"] == source, "date"])
+        hits = refresh.scan_hits(source, date)
+    hits = hits.copy()
     hits["date"] = hits["date"].astype(str)
     return {"source": source, "date": str(date), "rows": records(hits.sort_values("ret5", ascending=False))}
 
 
 @app.get("/api/validation")
 def get_validation():
-    return {**validation.report(), "reference": validation.compare_reference()}
+    report = remote.kv_get("validation") or {} if remote.ON else validation.report()
+    return {**report, "reference": validation.compare_reference()}
 
 
 class RefIn(BaseModel):

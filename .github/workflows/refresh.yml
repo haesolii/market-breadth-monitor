@@ -42,6 +42,13 @@ jobs:
           key: data-${{ github.run_id }}
           restore-keys: data-
 
+      - name: Pull dashboard settings
+        if: env.HAS_SUPABASE == 'true'
+        env:
+          DATA_DIR: ${{ github.workspace }}/data
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: python -m app.publish --pull-config
+
       - name: Collect and compute
         env:
           DATA_DIR: ${{ github.workspace }}/data

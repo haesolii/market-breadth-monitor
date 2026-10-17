@@ -8,6 +8,7 @@ import threading
 import duckdb
 import pandas as pd
 
+from . import remote
 from .config import DATA
 
 _lock = threading.RLock()
@@ -18,11 +19,15 @@ def path(name: str):
 
 
 def read(name: str) -> pd.DataFrame:
+    if remote.ON:
+        return remote.read_table(name)
     p = path(name)
     return pd.read_parquet(p) if p.exists() else pd.DataFrame()
 
 
 def write(name: str, df: pd.DataFrame) -> None:
+    if remote.ON:
+        return remote.write_table(name, df)
     with _lock:
         tmp = DATA / f".{name}.tmp.parquet"
         df.to_parquet(tmp, index=False)
@@ -66,6 +71,8 @@ _STATUS = DATA / "status.json"
 
 
 def status() -> dict:
+    if remote.ON:  # published by the GitHub Actions job
+        return remote.kv_get("status") or {"sources": {}, "log": []}
     with _lock:
         if _STATUS.exists():
             return json.loads(_STATUS.read_text("utf-8"))
@@ -73,6 +80,8 @@ def status() -> dict:
 
 
 def _save(st: dict) -> None:
+    if remote.ON:  # the deployed API never refreshes data; status is owned by the job
+        return
     tmp = DATA / ".status.tmp.json"
     tmp.write_text(json.dumps(st, indent=1, default=str), "utf-8")
     os.replace(tmp, _STATUS)

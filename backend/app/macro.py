@@ -14,7 +14,6 @@ import requests
 
 from . import store
 from .collectors import http_session
-from .config import FRED_API_KEY
 
 FRED_CSV = "https://fred.stlouisfed.org/graph/fredgraph.csv"
 
@@ -46,31 +45,23 @@ SERIES = {
 GROUP_ORDER = ["물가", "고용", "금리·신용", "경기", "유동성"]
 
 
-FRED_API = "https://api.stlouisfed.org/fred/series/observations"
-
-
 def _session():
-    """Short timeouts, one retry: FRED's CSV endpoint may not answer datacenter IPs
-    (GitHub Actions), and a hang must not stall the whole refresh."""
+    """FRED silently stalls browser-like custom User-Agents coming from datacenter IPs
+    (GitHub Actions) but serves the plain requests UA; short timeouts so a stall can
+    never hold up the whole refresh."""
     s = http_session(pool=8)
+    s.headers["User-Agent"] = requests.utils.default_user_agent()
     s.mount("https://", requests.adapters.HTTPAdapter(max_retries=1, pool_maxsize=8))
     return s
 
 
 def _fetch_one(s, sid: str) -> pd.DataFrame:
-    if FRED_API_KEY:  # official API (free key) — reliable from cloud runners
-        r = s.get(FRED_API, params={"series_id": sid, "api_key": FRED_API_KEY, "file_type": "json"}, timeout=20)
-        r.raise_for_status()
-        df = pd.DataFrame(r.json().get("observations", []))[["date", "value"]]
-    else:
-        r = s.get(FRED_CSV, params={"id": sid}, timeout=20)
-        r.raise_for_status()
-        df = pd.read_csv(io.StringIO(r.text))
-        if df.shape[1] < 2:
-            raise ValueError(f"{sid}: unexpected CSV")
-        df.columns = ["date", "value"]
-    if len(df) < 10:
-        raise ValueError(f"{sid}: too few observations")
+    r = s.get(FRED_CSV, params={"id": sid}, timeout=20)
+    r.raise_for_status()
+    df = pd.read_csv(io.StringIO(r.text))
+    if df.shape[1] < 2 or len(df) < 10:
+        raise ValueError(f"{sid}: unexpected CSV")
+    df.columns = ["date", "value"]
     df["value"] = pd.to_numeric(df["value"], errors="coerce")  # FRED uses "." for missing
     df = df.dropna()
     df["date"] = pd.to_datetime(df["date"]).dt.date

@@ -6,7 +6,8 @@ from dotenv import load_dotenv
 ROOT = Path(__file__).resolve().parents[2]
 load_dotenv(ROOT / ".env")
 
-DATA = Path(os.getenv("DATA_DIR") or ROOT / "data")
+# Vercel functions can only write to /tmp (the deployed API keeps no data files anyway).
+DATA = Path(os.getenv("DATA_DIR") or ("/tmp/data" if os.getenv("VERCEL") else ROOT / "data"))
 DATA.mkdir(parents=True, exist_ok=True)
 
 MASSIVE_API_KEY = os.getenv("MASSIVE_API_KEY", "").strip()

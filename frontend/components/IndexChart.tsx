@@ -17,8 +17,15 @@ const sma = (v: number[], n: number) => v.map((_, i) => (i + 1 >= n ? +(v.slice(
  * used wherever TradingView's free widget does not carry the index itself.
  * sessions = trading days shown initially (126 ≈ 6개월, 252 ≈ 1년, 756 ≈ 3년); drag/zoom for more. */
 export function IndexChart({ symbol, height = 520, compact = false, sessions = 252 }: { symbol: string; height?: number; compact?: boolean; sessions?: number }) {
+  // Small (compact) charts only load the visible period plus ~1 year for the 200-day average.
+  const since = useMemo(() => {
+    if (!compact) return "";
+    const d = new Date();
+    d.setDate(d.getDate() - Math.round(sessions * 1.45) - 320);
+    return `&since=${d.toISOString().slice(0, 10)}`;
+  }, [compact, sessions]);
   const { data, error } = useApi<Record<string, [string, number, number, number, number][]>>(
-    `/api/world/history?ohlc=true&symbols=${encodeURIComponent(symbol)}`);
+    `/api/world/history?ohlc=true&symbols=${encodeURIComponent(symbol)}${since}`);
   const option = useMemo(() => {
     const rows = data?.[symbol] ?? [];
     if (!rows.length) return null;

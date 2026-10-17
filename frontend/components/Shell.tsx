@@ -14,7 +14,6 @@ const MENU = [
   ["/world", "6. 세계 지수", "World Indices"],
   ["/macro", "7. 매크로", "Macro"],
   ["/board", "8. 차트 보드", "Chart Board"],
-  ["/data", "9. 데이터 관리 및 설정", "Data & Settings"],
 ];
 
 export const localTime = (iso?: string | null) => (iso ? new Date(iso).toLocaleString("ko-KR", { hour12: false }) : "—");
@@ -60,9 +59,13 @@ export function StatusBar() {
         </Link>
       )}
       {msg && <span className="text-sky-400">{msg}</span>}
-      <Button size="sm" variant="outline" className="ml-auto h-7" onClick={refresh} disabled={st.busy}>
-        {st.busy ? "갱신 중…" : "수동 갱신 (Refresh)"}
-      </Button>
+      {process.env.NEXT_PUBLIC_AUTH === "1" ? (
+        <span className="ml-auto text-[11px] text-zinc-500">매일 자동 갱신</span>
+      ) : (
+        <Button size="sm" variant="outline" className="ml-auto h-7" onClick={refresh} disabled={st.busy}>
+          {st.busy ? "갱신 중…" : "수동 갱신 (Refresh)"}
+        </Button>
+      )}
     </div>
   );
 }

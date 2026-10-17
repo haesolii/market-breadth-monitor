@@ -286,8 +286,8 @@ def world_summary(z: float = Query(2.0, gt=0, le=10), dd: float = Query(10.0, gt
 
 
 @app.get("/api/world/history")
-def world_history(symbols: str, ohlc: bool = False):
-    return world.history([s for s in symbols.split(",") if s], ohlc)
+def world_history(symbols: str, ohlc: bool = False, since: dt.date | None = None):
+    return world.history([s for s in symbols.split(",") if s], ohlc, since)
 
 
 class IndexIn(BaseModel):

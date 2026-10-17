@@ -1,6 +1,7 @@
 "use client";
 import { useMemo, useState } from "react";
 import { Err, Panel, RangePicker, useSource } from "@/components/bits";
+import { LevelsEditor } from "@/components/LevelsEditor";
 import { TimeChart } from "@/components/TimeChart";
 import { Input } from "@/components/ui/input";
 import { useApi, useBench, type Series } from "@/lib/api";
@@ -23,6 +24,7 @@ export default function Monitor() {
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const [limit, setLimit] = useState(120);
+  const [editLevels, setEditLevels] = useState(false);
 
   const rows = useMemo(() => mm.data?.rows ?? [], [mm.data]);
   const filtered = useMemo(() => rows.filter((r) => (!from || String(r.date) >= from) && (!to || String(r.date) <= to)), [rows, from, to]);
@@ -76,10 +78,12 @@ export default function Monitor() {
             <Input type="date" className="h-7 w-36 text-xs" value={from} onChange={(e) => setFrom(e.target.value)} />
             <span className="text-xs">~</span>
             <Input type="date" className="h-7 w-36 text-xs" value={to} onChange={(e) => setTo(e.target.value)} />
+            <button className="text-xs text-sky-400" onClick={() => setEditLevels(!editLevels)}>{editLevels ? "강조 기준 닫기" : "강조 기준 설정"}</button>
             <button className="text-xs text-sky-400" onClick={() => downloadCSV(`market_monitor_${src}.csv`, filtered)}>CSV 다운로드</button>
           </>
         }
       >
+        {editLevels && <div className="mb-2"><LevelsEditor market={src} label={info?.short ?? src} /></div>}
         <div className="max-h-[70vh] overflow-auto">
           <table className="w-full border-collapse font-mono text-xs">
             <thead className="sticky top-0 z-10 bg-zinc-900 text-zinc-300">
@@ -112,7 +116,7 @@ export default function Monitor() {
           )}
         </div>
         <div className="mt-2 text-[11px] text-zinc-500">
-          녹색 = 상승 계열, 빨간색 = 하락 계열, 진한 색 = 강조 기준 초과 (데이터 관리 메뉴에서 변경) · “—” = 값 없음.
+          녹색 = 상승 계열, 빨간색 = 하락 계열, 진한 색 = 강조 기준 초과 (“강조 기준 설정”에서 변경) · “—” = 값 없음.
         </div>
       </Panel>
     </div>

@@ -241,12 +241,14 @@ def correlation(df: pd.DataFrame, days: int = 60) -> dict:
             "matrix": [[None if pd.isna(v) else float(v) for v in row] for row in cm.to_numpy()]}
 
 
-def history(symbols: list[str], ohlc: bool = False) -> dict:
+def history(symbols: list[str], ohlc: bool = False, since=None) -> dict:
     """{symbol: [[date, close], ...]} or, with ohlc, [[date, open, high, low, close], ...]."""
     df = store.read("indices")
     out = {}
     for sym in symbols:
         s = df[df["symbol"] == sym].sort_values("date") if len(df) else df
+        if since is not None and len(s):
+            s = s[s["date"] >= since]
         if ohlc and "open" in s:
             o = s[["open", "high", "low"]].fillna(s["close"], axis=0) if len(s) else s
             out[sym] = [[str(d), float(a), float(h), float(lo), float(c)]

@@ -10,6 +10,7 @@ DATA = Path(os.getenv("DATA_DIR") or ROOT / "data")
 DATA.mkdir(parents=True, exist_ok=True)
 
 MASSIVE_API_KEY = os.getenv("MASSIVE_API_KEY", "").strip()
+FRED_API_KEY = os.getenv("FRED_API_KEY", "").strip()
 MASSIVE_RATE_PER_MIN = float(os.getenv("MASSIVE_RATE_PER_MIN", "5"))
 MASSIVE_START = os.getenv("MASSIVE_START", "2024-11-01")
 YAHOO_SCANNER = os.getenv("YAHOO_SCANNER", "1") == "1"

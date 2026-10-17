@@ -44,6 +44,7 @@ jobs:
 
       - name: Pull dashboard settings
         if: env.HAS_SUPABASE == 'true'
+        continue-on-error: true  # collection still runs; the publish step reports DB problems
         env:
           DATA_DIR: ${{ github.workspace }}/data
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}

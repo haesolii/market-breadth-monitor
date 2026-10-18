@@ -88,6 +88,13 @@ def chart(symbol: str, s=None) -> tuple[pd.DataFrame, dict]:
     return df.assign(symbol=symbol), info
 
 
+def missing() -> bool:
+    """A listed index or ETF has no stored history yet (newly added) -> refresh even when not stale."""
+    df = store.read("indices")
+    have = set(df["symbol"]) if len(df) else set()
+    return any(it["symbol"] not in have for it in config()) or any(k not in have for k in ETF_BENCH)
+
+
 def refresh() -> dict:
     items = config()
     items += [{"symbol": k} for k in ETF_BENCH if k not in {it["symbol"] for it in items}]

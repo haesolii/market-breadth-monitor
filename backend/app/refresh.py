@@ -183,7 +183,8 @@ def refresh(sources: list[str] | None = None, only_stale: bool = False) -> dict:
         out = {}
         for s in sources or enabled_sources():
             ld = latest_date(s)
-            if only_stale and ld is not None and ld >= latest_complete_session(cal=universes.cal_of(s)):
+            if (only_stale and ld is not None and ld >= latest_complete_session(cal=universes.cal_of(s))
+                    and not (s == "indices" and world.missing())):
                 continue
             out[s] = run(s)
         return out

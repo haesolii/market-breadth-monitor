@@ -43,3 +43,12 @@ def test_yields_bp_and_inversion():
     rows = [{"symbol": "^TNX", "close": 4.0, "flags": []}, {"symbol": "^IRX", "close": 4.5, "flags": []}]
     world._curve_flag(rows)
     assert rows[0]["spread_10y3m"] == -50.0 and rows[0]["flags"][0]["code"] == "inverted"
+
+
+def test_missing(monkeypatch):
+    listed = ["^GSPC", *world.ETF_BENCH]
+    monkeypatch.setattr(world, "config", lambda: [{"symbol": "^GSPC"}])
+    monkeypatch.setattr(world.store, "read", lambda _: pd.DataFrame({"symbol": listed}))
+    assert not world.missing()
+    monkeypatch.setattr(world.store, "read", lambda _: pd.DataFrame({"symbol": listed[:-1]}))  # new ETF -> refresh
+    assert world.missing()

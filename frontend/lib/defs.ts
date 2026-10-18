@@ -101,3 +101,37 @@ export function cellClass(d: Def, v: unknown, levels: Levels): string {
   if (a !== null && v <= a) return "bg-red-700 text-white font-semibold";
   return v >= mid ? "text-emerald-400" : "text-red-400";
 }
+
+type Vals = Record<string, number | null | undefined>;
+const at = (x: Vals, k: string) => x[k] ?? 0;
+/** Stockbee reading criteria + today's interpretation per Market Monitor row. Count thresholds are US-universe. */
+export const READ: Record<string, { rule: string; read: (v: number, x: Vals) => string }> = {
+  up4: { rule: "300↑ 매수세 강화, 500↑ 강한 매수세",
+    read: (v) => v >= 500 ? "🟢 강한 매수세" : v >= 300 ? "🟢 매수세 강화" : v >= 100 ? "⚪ 보통" : "🔴 매수세 매우 약함" },
+  down4: { rule: "500~1,000 강한 매도세, 1,000↑ 극단적 투매",
+    read: (v, x) => v >= 1000 ? "🔴 극단적 투매" : v >= 500 ? "🔴 강한 매도세" : v > at(x, "up4") ? "🟠 매도 우위, 극단적 투매는 아님" : "⚪ 매도 압력 낮음" },
+  ratio5: { rule: "1 미만 매도 우위, 0.5 이하 약세 심화",
+    read: (v) => v >= 2 ? "🟢 강한 매수세" : v >= 1 ? "🟢 매수 우위" : v > 0.5 ? "🟠 매도 우위" : "🔴 단기 약세 심화" },
+  ratio10: { rule: "0.5 이하 약세 신호, 2 이상 강한 매수세",
+    read: (v) => v >= 2 ? "🟢 강한 매수세 (thrust)" : v >= 1 ? "🟢 매수 우위" : v <= 0.5 ? "🔴 약세 신호" : v < 0.6 ? "🟠 약세 기준 근접" : "🟠 매도 우위" },
+  quarter_up25: { rule: "500 이하 반등 관찰, 200 이하 극단적 약세",
+    read: (v, x) => v <= 200 ? "🔴 극단적 약세" : v <= 500 ? "🟠 반등 관찰 구간" : v < at(x, "quarter_down25") ? "🟠 중기 상승 종목 부족" : "🟢 중기 상승 우위" },
+  quarter_down25: { rule: "상승 종목 수와 비교해 중기 추세 판단",
+    read: (v, x) => v > 2 * at(x, "quarter_up25") ? "🔴 중기 하락 종목 압도적" : v > at(x, "quarter_up25") ? "🟠 중기 하락 우위" : "🟢 중기 상승 우위" },
+  month_up25: { rule: "상승 종목 수의 확대·축소 관찰",
+    read: (v, x) => v >= 200 ? "🟢 강한 상승 확산" : v >= at(x, "month_down25") ? "🟢 상승 우위" : v >= at(x, "month_down25") / 2 ? "🟠 상승 탄력 약함" : "🔴 단기 상승 탄력 부족" },
+  month_down25: { rule: "상승 종목 수와 비교해 하락 확산 평가",
+    read: (v, x) => v > 2 * at(x, "month_up25") ? "🔴 하락 종목 우세" : v > at(x, "month_up25") ? "🟠 하락 우위" : "🟢 상승 우위" },
+  month_up50: { rule: "극단적 상승 종목의 확산 여부 관찰",
+    read: (v, x) => v >= 20 ? "🟢 강한 상승 확산 (과열 주의)" : v < at(x, "month_down50") ? "🔴 강한 상승 종목 희소" : "⚪ 보통" },
+  month_down50: { rule: "20개 초과 시 극단적 약세, 역추세 반등 관찰",
+    read: (v) => v > 20 ? "🟠 극단적 하락, 반등 가능성 관찰" : "⚪ 보통" },
+  day34_up13: { rule: "상승 종목의 증가·감소 추세 확인",
+    read: (v, x) => v >= at(x, "day34_down13") ? "🟢 상승 종목 우위" : v >= at(x, "day34_down13") / 3 ? "🟠 반등 종목 존재하나 우세하지 않음" : "🔴 상승 종목 희소" },
+  day34_down13: { rule: "상승 종목과 비교해 시장 폭 판단",
+    read: (v, x) => v > 2 * at(x, "day34_up13") ? "🔴 광범위한 약세" : v > at(x, "day34_up13") ? "🟠 하락 우위" : "🟢 상승 우위" },
+  day34_diff: { rule: "양수 상승 우위, 음수 하락 우위",
+    read: (v) => v > 0 ? "🟢 상승 종목 우위" : v < 0 ? "🔴 하락 압력 우세" : "⚪ 균형" },
+  t2108: { rule: "20% 미만 극단적 과매도, 80% 초과 과매수",
+    read: (v) => v < 20 ? "🔴 극단적 과매도, 반등 관찰" : v < 30 ? "🟠 약세·과매도 접근" : v > 80 ? "🟠 과매수" : v >= 50 ? "🟢 양호" : "⚪ 중립" },
+};

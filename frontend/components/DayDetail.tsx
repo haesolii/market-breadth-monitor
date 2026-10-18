@@ -1,4 +1,5 @@
 "use client";
+import { Fragment } from "react";
 import { useApi, type Status } from "@/lib/api";
 import { DEFS, READ, fmt } from "@/lib/defs";
 import { Panel } from "./bits";
@@ -26,15 +27,21 @@ export function DayDetail({ date, mmSource }: { date: string | null; mmSource?: 
             <thead className="text-zinc-500"><tr><th className="text-left">20% 급등락 (Bull/Bear)</th><th>Bull</th><th>5일Δ</th><th>10일Δ</th><th>Bear</th><th>5일Δ</th><th>10일Δ</th></tr></thead>
             <tbody>
               {Object.entries(data.breadth20).map(([s, r]) => (
-                <tr key={s} className="text-center">
+                <Fragment key={s}>
+                <tr className="text-center">
                   <td className="text-left text-zinc-400">{st?.source_info[s]?.short ?? (s === "public_repo" ? "미국 전체 (상장폐지 포함)" : s)}</td>
                   <td className="text-emerald-400">{fmt(r.bull)}</td><td>{chg(r.bull_chg5)}</td><td>{chg(r.bull_chg10)}</td>
                   <td className="text-red-400">{fmt(r.bear)}</td><td>{chg(r.bear_chg5)}</td><td>{chg(r.bear_chg10)}</td>
                 </tr>
+                {typeof r.bull === "number" && typeof r.bear === "number" && (
+                  <tr><td colSpan={7} className="pb-1 text-left font-sans text-zinc-300">Bull: {READ.bull.read(r.bull, r)} · Bear: {READ.bear.read(r.bear, r)}</td></tr>
+                )}
+                </Fragment>
               ))}
               {!Object.keys(data.breadth20).length && <tr><td colSpan={7} className="text-zinc-500">해당 날짜 데이터 없음</td></tr>}
             </tbody>
           </table>
+          <div className="text-[10px] text-zinc-600">기준 — Bull: {READ.bull.rule} · Bear: {READ.bear.rule}</div>
           {data.monitor ? (
             <table className="w-full font-mono">
               <thead className="text-zinc-500"><tr><th className="text-left">시장 모니터 ({st?.source_info[data.monitor.source]?.short ?? data.monitor.source})</th><th>값</th><th>5일Δ</th><th>10일Δ</th><th className="text-left">해석</th></tr></thead>

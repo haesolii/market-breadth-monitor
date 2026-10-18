@@ -132,6 +132,11 @@ export const READ: Record<string, { rule: string; read: (v: number, x: Vals) => 
     read: (v, x) => v > 2 * at(x, "day34_up13") ? "🔴 광범위한 약세" : v > at(x, "day34_up13") ? "🟠 하락 우위" : "🟢 상승 우위" },
   day34_diff: { rule: "양수 상승 우위, 음수 하락 우위",
     read: (v) => v > 0 ? "🟢 상승 종목 우위" : v < 0 ? "🔴 하락 압력 우세" : "⚪ 균형" },
+  // 20% Bull/Bear: no published Stockbee thresholds; 50/100 are this app's default Bear lines.
+  bull: { rule: "Bear 수와 비교 (앱 기준, 원문 임계값 없음)",
+    read: (v, x) => v >= 2 * at(x, "bear") ? "🟢 상승 모멘텀 우위" : v >= at(x, "bear") ? "🟢 상승 우위" : v >= at(x, "bear") / 2 ? "🟠 하락 우위" : "🔴 상승 모멘텀 부족" },
+  bear: { rule: "50↑ 급락 증가, 100↑ 극단적 급락 (앱 기본 기준선)",
+    read: (v, x) => v >= 100 ? "🔴 극단적 급락, 과매도 반등 관찰" : v >= 50 ? "🟠 급락 종목 증가" : v > at(x, "bull") ? "🟠 하락 우위" : "⚪ 급락 압력 낮음" },
   t2108: { rule: "20% 미만 극단적 과매도, 80% 초과 과매수",
     read: (v) => v < 20 ? "🔴 극단적 과매도, 반등 관찰" : v < 30 ? "🟠 약세·과매도 접근" : v > 80 ? "🟠 과매수" : v >= 50 ? "🟢 양호" : "⚪ 중립" },
 };

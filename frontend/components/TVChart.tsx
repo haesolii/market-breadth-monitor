@@ -36,7 +36,9 @@ export function TVChart({ symbol, height = 520, compact = false }: { symbol: str
     s.innerHTML = JSON.stringify({
       symbol, interval: "D", theme: "dark", style: "1", locale: "kr", timezone: "Asia/Seoul",
       autosize: true, allow_symbol_change: !compact, withdateranges: !compact,
-      ...(compact ? { hide_top_toolbar: true, hide_side_toolbar: true } : {}),
+      // Drawing toolbar and image-save button off: rarely used, they only take chart space. Branding stays.
+      hide_side_toolbar: true, save_image: false,
+      ...(compact ? { hide_top_toolbar: true } : {}),
       backgroundColor: "rgba(9, 9, 11, 1)",
       // Same moving averages as the dashboard tables (50 / 200 days).
       studies: compact ? [] : [
@@ -50,9 +52,16 @@ export function TVChart({ symbol, height = 520, compact = false }: { symbol: str
   // The embed script rewrites its container's style (height: 100%), so the fixed height lives on an
   // outer box it never touches; otherwise cards collapse and overlap the next row.
   return (
+    <>
     <div className="relative overflow-hidden" style={{ height }}>
       <div ref={ref} className="tradingview-widget-container" style={{ height: "100%", width: "100%" }} />
     </div>
+    {/* Attribution from TradingView's embed code, kept verbatim: their widget FAQ says removing or changing it
+        (text and link) needs their agreement. Kept outside the box the embed script rewrites. */}
+    <div className="text-right text-[10px] text-zinc-500">
+      <a href="https://www.tradingview.com/" rel="noopener nofollow" target="_blank" className="hover:text-sky-400">Track all markets on TradingView</a>
+    </div>
+    </>
   );
 }
 

@@ -37,7 +37,7 @@ YIELDS = {"^IRX", "^FVX", "^TNX", "^TYX"}
 INVERSE = {"^VIX"} | YIELDS
 # Tradeable ETFs used as the Market Monitor's comparison panel (stored with the indices,
 # but not part of the world-index list / summary).
-ETF_BENCH = {"SPY": "SPY (S&P 500 ETF)", "QQQ": "QQQ (나스닥100 ETF)",
+ETF_BENCH = {"SPY": "SPY (S&P 500 ETF)", "QQQ": "QQQ (나스닥100 ETF)", "RSP": "RSP (S&P 500 동일가중 ETF)",
              "069500.KS": "KODEX 200", "229200.KS": "KODEX 코스닥150"}
 CONFIG = DATA / "indices.json"
 

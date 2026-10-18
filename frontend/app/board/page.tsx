@@ -8,6 +8,8 @@ import { useSetting } from "@/lib/settings";
 
 type Item = { symbol: string; name: string; region: string };
 const REGION_ORDER = ["미국", "아시아", "유럽", "미주", "원자재", "채권"];
+// Board-only extras (not in the world-index list): refreshed with the Market Monitor ETFs (world.ETF_BENCH).
+const EXTRA: Item[] = [{ symbol: "RSP", name: "S&P 500 동일가중 (RSP)", region: "미국" }];
 
 /** Chart grid for every symbol in the world-index list. Cells are drawn from our own index data so the
  * 6개월 / 1년 / 3년 period applies exactly (TradingView's widget cannot show 6M or 3Y of daily bars). */
@@ -17,7 +19,8 @@ export default function Board() {
   const [cols, setCols] = useSetting("board.cols", "4");
   const [period, setPeriod] = useSetting("board.period", 252);
   const [big, setBig] = useState<Item | null>(null);
-  const items = cfg.data?.items ?? [];
+  const listed = cfg.data?.items ?? [];
+  const items = listed.length ? [...listed, ...EXTRA.filter((e) => !listed.some((i) => i.symbol === e.symbol))] : [];
   const regions = [...new Set(items.map((i) => i.region))].sort((a, b) => REGION_ORDER.indexOf(a) - REGION_ORDER.indexOf(b));
   const shown = items.filter((i) => !region || i.region === region);
   const grid = { "2": "md:grid-cols-2", "3": "md:grid-cols-2 xl:grid-cols-3", "4": "md:grid-cols-2 xl:grid-cols-4" }[cols];

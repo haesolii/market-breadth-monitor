@@ -6,7 +6,7 @@ import { TimeChart, type S } from "@/components/TimeChart";
 import { Input } from "@/components/ui/input";
 import { useApi, useBench, type Series } from "@/lib/api";
 import { downloadCSV } from "@/lib/csv";
-import { fmt } from "@/lib/defs";
+import { READ, fmt } from "@/lib/defs";
 import { useSetting } from "@/lib/settings";
 
 const n = (v: unknown) => (typeof v === "number" ? v : null);
@@ -69,11 +69,11 @@ export default function BullBear() {
       >
         <TimeChart dates={dates} series={series} spy={spyData} lines={mk} onSelect={setSel} selected={sel} height={520} yName="종목 수" lowerName={bench.name} />
         <div className="mt-1 text-[11px] text-zinc-500">
-          녹색 = 20% 급등 종목 수, 빨간색(아래쪽) = 20% 급락 종목 수 · 차트를 클릭하면 날짜 상세가 표시됩니다.
+          녹색 = 20% 급등 종목 수, 빨간색(아래쪽) = 20% 급락 종목 수 · 차트를 클릭하면 날짜 상세가 표시됩니다(기본: 최근 거래일) · 표의 Bull/Bear 숫자에 마우스를 올리면 해석이 보입니다 · 기준값은 미국 전체 시장 기준입니다.
         </div>
       </Panel>
       <div className="grid gap-3 xl:grid-cols-2">
-        <DayDetail date={sel} />
+        <DayDetail date={sel ?? (rows.length ? String(rows.at(-1)!.date) : null)} />
         <Panel title="최근 30거래일" right={<button className="text-xs text-sky-400" onClick={() => downloadCSV(`breadth20_${src}.csv`, rows)}>CSV 다운로드</button>}>
           <table className="w-full font-mono text-xs">
             <thead className="text-zinc-500"><tr><th className="text-left">날짜</th><th>Bull</th><th>Bear</th><th>Net</th><th>Bull/Bear</th></tr></thead>
@@ -83,8 +83,8 @@ export default function BullBear() {
                 return (
                   <tr key={String(r.date)} className="cursor-pointer text-center hover:bg-zinc-900" onClick={() => setSel(String(r.date))}>
                     <td className="text-left">{String(r.date)}</td>
-                    <td className="text-emerald-400">{fmt(bu)}</td>
-                    <td className={be !== null && be >= 100 ? "bg-red-700 text-white" : "text-red-400"}>{fmt(be)}</td>
+                    <td className="text-emerald-400" title={bu !== null ? READ.bull.read(bu, r as Record<string, number | null>) : undefined}>{fmt(bu)}</td>
+                    <td title={be !== null ? READ.bear.read(be, r as Record<string, number | null>) : undefined} className={be !== null && be >= 100 ? "bg-red-700 text-white" : "text-red-400"}>{fmt(be)}</td>
                     <td className={(bu ?? 0) - (be ?? 0) >= 0 ? "text-emerald-400" : "text-red-400"}>{bu !== null && be !== null ? bu - be : "—"}</td>
                     <td>{bu !== null && be ? fmt(bu / be, 2) : "N/A"}</td>
                   </tr>

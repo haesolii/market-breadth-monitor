@@ -5,7 +5,7 @@ import { Err, Kpi, Panel, RangePicker, useSource } from "@/components/bits";
 import { localTime } from "@/components/Shell";
 import { TimeChart } from "@/components/TimeChart";
 import { useApi, useBench, type Series } from "@/lib/api";
-import { defOf, fmt } from "@/lib/defs";
+import { READ, defOf, fmt } from "@/lib/defs";
 
 const n = (v: unknown) => (typeof v === "number" ? v : null);
 const delta = (a: number | null, b: number | null) => (a === null || b === null ? "—" : `${a - b >= 0 ? "+" : ""}${fmt(a - b)}`);
@@ -35,9 +35,11 @@ export default function Overview() {
   const spyData = useMemo(() => (spx.map ? dates.map((d) => spx.map!.get(d) ?? null) : undefined), [spx.map, dates]);
 
   const mmKpi = (key: string, digits = 0) => {
-    const d = defOf(key)!;
+    const d = defOf(key)!, v = m?.[key];
+    const read = m && typeof v === "number" ? READ[key]?.read(v, m as Record<string, number | null>) : undefined;
     return <Kpi key={key} label={<>{d.ko} <span className="text-zinc-600">({d.en})</span></>}
-      value={fmt(m?.[key], digits)} sub={`전일 ${fmt(mp?.[key], digits)}`} tone={d.kind === "down" ? "down" : d.kind === "up" ? "up" : "flat"} />;
+      value={fmt(m?.[key], digits)} tone={d.kind === "down" ? "down" : d.kind === "up" ? "up" : "flat"}
+      sub={<>전일 {fmt(mp?.[key], digits)}{read && <div className="text-zinc-300" title={`기준: ${READ[key].rule}`}>{read}</div>}</>} />;
   };
 
   return (

@@ -6,11 +6,15 @@ import { TimeChart } from "@/components/TimeChart";
 import { Input } from "@/components/ui/input";
 import { useApi, useBench, type Series } from "@/lib/api";
 import { downloadCSV } from "@/lib/csv";
-import { BB_DEFS, DEFS, cellClass, defOf, defaultLevels, fmt, type Levels } from "@/lib/defs";
+import { BB_DEFS, DEFS, READ, cellClass, defOf, defaultLevels, fmt, type Levels } from "@/lib/defs";
 import { useSetting } from "@/lib/settings";
 
 const COLS = [...DEFS, ...BB_DEFS];
 const n = (v: unknown) => (typeof v === "number" ? v : null);
+const readOf = (k: string, r: Record<string, unknown>) => {
+  const v = r[k];
+  return READ[k] && typeof v === "number" ? READ[k].read(v, r as Record<string, number | null>) : undefined;
+};
 
 export default function Monitor() {
   const [src, srcSel, st] = useSource("monitor", true);
@@ -29,6 +33,7 @@ export default function Monitor() {
   const rows = useMemo(() => mm.data?.rows ?? [], [mm.data]);
   const filtered = useMemo(() => rows.filter((r) => (!from || String(r.date) >= from) && (!to || String(r.date) <= to)), [rows, from, to]);
   const table = useMemo(() => [...filtered].reverse(), [filtered]);
+  const latest = rows.at(-1);
   const chartRows = useMemo(() => (range && !from && !to ? filtered.slice(-range) : filtered), [filtered, range, from, to]);
   const dates = useMemo(() => chartRows.map((r) => String(r.date)), [chartRows]);
   const d = defOf(metric)!;
@@ -70,6 +75,25 @@ export default function Monitor() {
         </div>
       </Panel>
 
+      {latest && (
+        <Panel title={<>지표 해석 (Stockbee 기준): <span className="font-mono text-sky-400">{String(latest.date)}</span></>}>
+          <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+            {DEFS.map((c) => (
+              <button key={c.key} onClick={() => setMetric(c.key)}
+                className={`rounded border px-2 py-1.5 text-left text-xs ${metric === c.key ? "border-sky-700 bg-zinc-800/60" : "border-zinc-800 hover:bg-zinc-800/40"}`}>
+                <div className="flex justify-between gap-2"><span className="text-zinc-400">{c.ko}</span>
+                  <span className="font-mono text-zinc-200">{fmt(latest[c.key], c.kind === "ratio" || c.kind === "pct" ? 2 : 0)}</span></div>
+                <div className="text-zinc-200">{readOf(c.key, latest) ?? "—"}</div>
+                <div className="text-[10px] text-zinc-600">기준: {READ[c.key]?.rule}</div>
+              </button>
+            ))}
+          </div>
+          <div className="mt-2 text-[11px] text-zinc-500">
+            가장 최근 거래일 값으로 자동 해석 · 종목 수 기준(300·500·1,000 등)은 미국 전체 시장 기준이라 국내 시장엔 그대로 맞지 않을 수 있습니다 · 아래 표 셀에 마우스를 올리면 그날의 해석이 보입니다.
+          </div>
+        </Panel>
+      )}
+
       <Panel
         title="시장 모니터 히스토리 (Market Monitor History)"
         right={
@@ -102,7 +126,7 @@ export default function Monitor() {
                 <tr key={String(r.date)} className="border-b border-zinc-900 text-center">
                   <td className="whitespace-nowrap px-2 py-0.5 text-left text-zinc-400">{String(r.date)}</td>
                   {COLS.map((c) => (
-                    <td key={c.key} className={`px-2 py-0.5 ${cellClass(c, r[c.key], levels)}`}>{fmt(r[c.key], c.kind === "ratio" || c.kind === "pct" ? 2 : 0)}</td>
+                    <td key={c.key} title={readOf(c.key, r)} className={`px-2 py-0.5 ${cellClass(c, r[c.key], levels)}`}>{fmt(r[c.key], c.kind === "ratio" || c.kind === "pct" ? 2 : 0)}</td>
                   ))}
                   <td className="px-2 py-0.5 text-zinc-500">{fmt(r.eligible_universe_count)}</td>
                 </tr>

@@ -54,3 +54,20 @@ def test_login_endpoint(monkeypatch):
     assert bad.status_code == 303 and bad.headers["location"].startswith("/login?error=1") and "mb_auth" not in bad.cookies
     ok = c.post("/api/login", content="password=pw&next=//evil.com", headers={"Content-Type": "application/x-www-form-urlencoded"})
     assert ok.status_code == 303 and ok.headers["location"] == "/" and ok.cookies.get("mb_auth") == main._TOKEN
+
+
+def test_cdn_cache_headers(monkeypatch):
+    """Deployed site: successful GETs are CDN-cacheable per auth cookie; 401s, visits and writes are not."""
+    import hashlib
+    token = hashlib.sha256(b"pw:mb").hexdigest()
+    monkeypatch.setattr(main, "_TOKEN", token)
+    monkeypatch.setattr(main.remote, "ON", True)
+    monkeypatch.setattr(main.usage, "record_visit", lambda r: None)
+    if not any(getattr(rt, "path", "") == "/api/_cdn_probe" for rt in main.app.routes):
+        main.app.add_api_route("/api/_cdn_probe", lambda: {"ok": True})  # no store access (remote.ON would hit Supabase)
+    c = TestClient(main.app)
+    assert "Vercel-CDN-Cache-Control" not in c.get("/api/_cdn_probe").headers  # 401
+    c.cookies.set("mb_auth", token)
+    r = c.get("/api/_cdn_probe")
+    assert r.status_code == 200 and r.headers["Vercel-CDN-Cache-Control"].startswith("max-age=60") and r.headers["Vary"] == "Cookie"
+    assert "Vercel-CDN-Cache-Control" not in c.get("/api/visit").headers

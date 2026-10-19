@@ -89,7 +89,7 @@ def _check_fail_burst() -> None:
 
 
 def record_visit(request) -> None:
-    """At most one write per visitor per 10 minutes per instance (the status bar polls every 20s)."""
+    """At most one write per visitor per 10 minutes per instance (/api/visit: page load + every 10 min)."""
     if not remote.ON:
         return
     vid, ua = client(request)

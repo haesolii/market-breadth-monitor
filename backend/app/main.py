@@ -51,9 +51,26 @@ async def require_login(request: Request, call_next):
         return await call_next(request)
     if _TOKEN and not hmac.compare_digest(request.cookies.get("mb_auth", ""), _TOKEN):
         return JSONResponse({"detail": "로그인이 필요합니다"}, status_code=401)
-    if request.url.path == "/api/status":  # once per page view (+ status-bar polling, deduped)
+    if request.url.path == "/api/visit":  # page load + every 10 min from the status bar (never cached)
         usage.record_visit(request)
-    return await call_next(request)
+    res = await call_next(request)
+    if remote.ON and request.method == "GET" and res.status_code == 200 and request.url.path not in NO_CDN:
+        # Deployed site: the CDN answers repeat GETs, so API work does not grow with viewers.
+        # Vary: Cookie keys the cache by the auth cookie (one shared token), so a request without
+        # it never gets a cached answer and still reaches the 401 above.
+        ttl, swr = CDN_TTL.get(request.url.path, (60, 60))
+        res.headers["Vercel-CDN-Cache-Control"] = f"max-age={ttl}, stale-while-revalidate={swr}"
+        res.headers["Vary"] = "Cookie"
+    return res
+
+
+NO_CDN = {"/api/visit", "/api/login"}
+CDN_TTL = {"/api/status": (30, 30)}  # (seconds fresh, seconds served stale while refetching); data: at most ~2 min old
+
+
+@app.get("/api/visit")
+def visit():
+    return {"ok": True}
 
 
 @app.post("/api/login")

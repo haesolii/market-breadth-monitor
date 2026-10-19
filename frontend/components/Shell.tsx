@@ -1,7 +1,7 @@
 "use client";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { send, useApi, type Status } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 
@@ -19,7 +19,13 @@ const MENU = [
 export const localTime = (iso?: string | null) => (iso ? new Date(iso).toLocaleString("ko-KR", { hour12: false }) : "—");
 
 export function StatusBar() {
-  const { data: st, error, reload } = useApi<Status>("/api/status", 20000);
+  const { data: st, error, reload } = useApi<Status>("/api/status", 60000);
+  useEffect(() => {  // visitor count for the daily report (the cached status call can't count)
+    const ping = () => fetch("/api/visit", { cache: "no-store" }).catch(() => {});
+    ping();
+    const t = setInterval(ping, 10 * 60 * 1000);
+    return () => clearInterval(t);
+  }, []);
   const [msg, setMsg] = useState<string | null>(null);
   const refresh = async () => {
     try {

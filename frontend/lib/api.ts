@@ -10,8 +10,10 @@ const SHARE_MS = 3000;
 export function getJSON<T = unknown>(url: string, fresh = false): Promise<T> {
   const hit = recent.get(url);
   if (!fresh && hit && Date.now() - hit.t < SHARE_MS) return hit.p as Promise<T>;
+  // fresh (reload after an edit): a unique query skips the deployed site's 1-minute CDN cache.
+  const src = fresh ? `${url}${url.includes("?") ? "&" : "?"}_t=${Date.now()}` : url;
   const p = (async () => {
-    const r = await fetch(url, { cache: "no-store" });
+    const r = await fetch(src, { cache: "no-store" });
     const body = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error((body as { detail?: string }).detail ?? `${r.status} ${r.statusText}`);
     return body as T;

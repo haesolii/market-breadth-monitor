@@ -125,7 +125,7 @@ export default function WorldPage() {
         <Kpi label="200일선 위 지수 비율" value={a200.length ? `${Math.round((100 * a200.filter((r) => r.above200).length) / a200.length)}%` : "—"} sub={`${a200.filter((r) => r.above200).length}/${a200.length}개`} />
         <Kpi label="특이사항 발생 지수" value={flagged} tone={flagged ? "down" : "flat"} sub="아래 표에서 색상 강조" />
         <Kpi label="VIX" value={fmt(rows.find((r) => r.symbol === "^VIX")?.close, 2)} sub={<>1일 {pc(rows.find((r) => r.symbol === "^VIX")?.chg1d, true, 1)}</>} />
-        <Kpi label="마지막 갱신" value={<span className="text-base">{localTime(w.data?.last_success)}</span>} sub="서버 실행 중 1시간마다 자동" />
+        <Kpi label="마지막 갱신" value={<span className="text-base">{localTime(w.data?.last_success)}</span>} sub={process.env.NEXT_PUBLIC_AUTH === "1" ? "장중 약 5분마다 자동" : "서버 실행 중 1시간마다 자동"} />
       </div>
 
       <Panel
@@ -188,7 +188,7 @@ export default function WorldPage() {
           </table>
         </div>
         <div className="mt-2 text-[11px] text-zinc-500">
-          지수 이름을 클릭하면 차트가 열립니다 · VIX·금리는 상승을 빨간색으로 표시 · 금리 변화는 bp(0.01%p) · 장중인 지수는 전일 종가 기준(“장중” 표시) · 참고용이며 매매 신호가 아닙니다.
+          지수 이름을 클릭하면 차트가 열립니다 · VIX·금리는 상승을 빨간색으로 표시 · 금리 변화는 bp(0.01%p) · “장중” 표시 지수는 진행 중인 당일 값(잠정) · 참고용이며 매매 신호가 아닙니다.
         </div>
       </Panel>
 

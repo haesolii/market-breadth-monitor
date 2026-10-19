@@ -200,8 +200,10 @@ def refresh(sources: list[str] | None = None, only_stale: bool = False, live: bo
                 out[s] = run(s, live=True)
                 continue
             ld = latest_date(s)
-            if (only_stale and ld is not None and ld >= latest_complete_session(cal=universes.cal_of(s))
-                    and not _provisional(s) and not (s == "indices" and world.missing())):
+            # indices span many exchanges (e.g. Korea closes before the NYSE session is final),
+            # so they are never skipped as "not stale"; the download is a few seconds.
+            if (only_stale and s != "indices" and ld is not None
+                    and ld >= latest_complete_session(cal=universes.cal_of(s)) and not _provisional(s)):
                 continue
             out[s] = run(s)
         return out

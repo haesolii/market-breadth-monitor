@@ -99,10 +99,34 @@ def _select(cur, sql: str, params=()) -> pd.DataFrame:
     return df
 
 
-def version(df: pd.DataFrame) -> dict:
-    """Content fingerprint published next to each table (read side skips unchanged tables)."""
+def _h(df: pd.DataFrame) -> str:
     h = int(pd.util.hash_pandas_object(df, index=False).sum()) if len(df) else 0
-    return {"hash": f"{h & (2**64 - 1):016x}-{len(df)}", "rows": len(df)}
+    return f"{h & (2**64 - 1):016x}-{len(df)}"
+
+
+def version(df: pd.DataFrame) -> dict:
+    """Content fingerprint published next to each table (read side skips unchanged tables).
+    Dated tables also fingerprint the rows before `cut`, so a publish can rewrite only the recent part."""
+    v = {"hash": _h(df), "rows": len(df)}
+    if len(df) and "date" in df.columns:
+        cut = max(df["date"]) - dt.timedelta(days=SPLICE_DAYS)
+        v.update(cut=str(cut), head=_h(df[df["date"] < cut]))
+    return v
+
+
+def recent_part(df: pd.DataFrame, old: dict | None):
+    """(cut, rows dated >= cut) when every row before the previous publish's cut is unchanged, else None."""
+    if not old or "cut" not in old or not len(df) or "date" not in df.columns:
+        return None
+    cut = dt.date.fromisoformat(old["cut"])
+    return (cut, df[df["date"] >= cut]) if _h(df[df["date"] < cut]) == old["head"] else None
+
+
+def replace_since(name: str, cut, df: pd.DataFrame, cur) -> None:
+    """Delete rows dated >= cut and insert `df` (same schema), inside the caller's transaction."""
+    cur.execute(f"DELETE FROM {_q(name)} WHERE date >= %s", (cut,))
+    _copy(cur, name, df)
+    _cache.pop("t:" + name, None)
 
 
 _PG = {"b": "boolean", "i": "bigint", "u": "bigint", "f": "double precision"}
@@ -128,14 +152,7 @@ def write_table(name: str, df: pd.DataFrame, cur=None) -> None:
         cols = ", ".join(f"{_q(c)} {_pg_type(df[c])}" for c in df.columns)
         cur.execute(f"DROP TABLE IF EXISTS {_q(name)}")
         cur.execute(f"CREATE TABLE {_q(name)} ({cols})")
-        if len(df):
-            buf = io.StringIO()
-            df.to_csv(buf, index=False, header=False, na_rep="\\N")
-            buf.seek(0)
-            col_list = ", ".join(_q(c) for c in df.columns)
-            with cur.copy(f"COPY {_q(name)} ({col_list}) FROM STDIN WITH (FORMAT csv, NULL '\\N')") as cp:
-                while chunk := buf.read(1 << 20):
-                    cp.write(chunk)
+        _copy(cur, name, df)
         if own:
             con.commit()
     finally:
@@ -143,6 +160,18 @@ def write_table(name: str, df: pd.DataFrame, cur=None) -> None:
             cur.close()
             con.close()
     _cache.pop("t:" + name, None)
+
+
+def _copy(cur, name: str, df: pd.DataFrame) -> None:
+    if not len(df):
+        return
+    buf = io.StringIO()
+    df.to_csv(buf, index=False, header=False, na_rep="\\N")
+    buf.seek(0)
+    col_list = ", ".join(_q(c) for c in df.columns)
+    with cur.copy(f"COPY {_q(name)} ({col_list}) FROM STDIN WITH (FORMAT csv, NULL '\\N')") as cp:
+        while chunk := buf.read(1 << 20):
+            cp.write(chunk)
 
 
 def kv_get(key: str, default=None):

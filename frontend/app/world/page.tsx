@@ -8,7 +8,7 @@ import { IndexChart } from "@/components/IndexChart";
 import { TVChart, TV_INDEX } from "@/components/TVChart";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { send, useApi, type Series } from "@/lib/api";
+import { LIVE_MS, send, useApi, type Series } from "@/lib/api";
 import { downloadCSV } from "@/lib/csv";
 import { fmt } from "@/lib/defs";
 import { useSetting } from "@/lib/settings";
@@ -59,7 +59,7 @@ const yn = (v?: boolean) => (v === undefined || v === null ? "—" : v ? <span c
 export default function WorldPage() {
   const [z, setZ] = useSetting("world.z", "2");
   const [dd, setDd] = useSetting("world.dd", "10");
-  const w = useApi<World>(`/api/world?z=${z}&dd=${dd}`, 5 * 60 * 1000);
+  const w = useApi<World>(`/api/world?z=${z}&dd=${dd}`, LIVE_MS);
   const [region, setRegion] = useState("");
   const [onlyFlagged, setOnlyFlagged] = useState(false);
   const [picked, setPicked] = useSetting<string[]>("world.picked", ["^GSPC", "^KS11", "^N225", "^GDAXI"]);

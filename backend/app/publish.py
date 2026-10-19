@@ -51,8 +51,13 @@ def publish() -> None:
     try:
         with con.cursor() as cur:
             for name, df in frames.items():
-                if old.get(name) == versions[name]:
+                if old.get(name, {}).get("hash") == versions[name]["hash"]:
                     print(f"{name}: unchanged")
+                    continue
+                part = remote.recent_part(df, old.get(name))
+                if part:  # intraday publishes: only the last days changed
+                    remote.replace_since(name, part[0], part[1], cur)
+                    print(f"{name}: {len(part[1]):,} recent rows (since {part[0]})")
                     continue
                 remote.write_table(name, df, cur)
                 print(f"{name}: {len(df):,} rows")

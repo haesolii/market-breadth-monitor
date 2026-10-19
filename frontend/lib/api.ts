@@ -31,6 +31,9 @@ export async function send<T = unknown>(url: string, method: string, body?: unkn
   return res as T;
 }
 
+/** Re-fetch interval for market data views: the server publishes every ~5 min while a market is open. */
+export const LIVE_MS = 5 * 60 * 1000;
+
 /** Fetch `url` (skip when null); returns {data, error, loading, reload}. */
 export function useApi<T = unknown>(url: string | null, refreshMs?: number) {
   const [data, setData] = useState<T | null>(null);

@@ -4,7 +4,7 @@ import { DayDetail } from "@/components/DayDetail";
 import { Err, Panel, RangePicker, Select, useSource } from "@/components/bits";
 import { TimeChart, type S } from "@/components/TimeChart";
 import { Input } from "@/components/ui/input";
-import { useApi, useBench, type Series } from "@/lib/api";
+import { LIVE_MS, useApi, useBench, type Series } from "@/lib/api";
 import { downloadCSV } from "@/lib/csv";
 import { READ, cnt, fmt, scaleOf } from "@/lib/defs";
 import { useSetting } from "@/lib/settings";
@@ -14,7 +14,7 @@ const palette = ["#fca5a5", "#f87171", "#dc2626", "#991b1b", "#7f1d1d"];
 
 export default function BullBear() {
   const [src, srcSel, st] = useSource("breadth20", true);
-  const b = useApi<Series>(src ? `/api/breadth20?source=${src}` : null);
+  const b = useApi<Series>(src ? `/api/breadth20?source=${src}` : null, LIVE_MS);
   const [cmp, setCmp] = useState("");
   const c = useApi<Series>(cmp ? `/api/breadth20?source=${cmp}` : null);
   const bench = useBench(st?.source_info[src]?.benchmark ?? "^GSPC");

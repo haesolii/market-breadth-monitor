@@ -103,14 +103,30 @@ def refresh_universe(name: str, live: bool = False) -> dict:
         store.log("warn", name, f"{len(failed)} tickers failed, e.g. {failed[:5]}")
     included = u[u["excluded_reason"] == ""]
     res = _save_computed(name, bars[bars["ticker"].isin(set(included["ticker"]))])
+    # Yahoo publishes some tickers' close late; a thin last session stays provisional and is retried.
+    cov = _coverage(bars)
+    incomplete = live or cov < MIN_COVERAGE
     # Universes derived from this one's bars (e.g. Nasdaq composite basis from the US universe).
     for dname, d in universes.UNIVERSES.items():
         if d.get("derived_from") == name:
             sub = set(included.loc[included["exchange"] == d["exchange"], "ticker"])
             res[dname] = _save_computed(dname, bars[bars["ticker"].isin(sub)])
-            store.set_source(dname, last_success=store.now_utc(), last_error=None, provisional=live)
+            store.set_source(dname, last_success=store.now_utc(), last_error=None, provisional=incomplete)
     return {**res, "tickers": int(bars["ticker"].nunique()), "failed": len(failed),
-            "split_refetched": len(split_t), "new_tickers": len(full)}
+            "split_refetched": len(split_t), "new_tickers": len(full), "coverage": round(cov, 4),
+            "provisional": incomplete}
+
+
+MIN_COVERAGE = 0.99  # last session's tickers / previous session's tickers
+
+
+def _coverage(bars: pd.DataFrame) -> float:
+    """Share of the previous session's tickers that also have a bar on the last session."""
+    days = sorted(bars["date"].unique())[-2:]
+    if len(days) < 2:
+        return 1.0
+    prev, last = (set(bars.loc[bars["date"] == d, "ticker"]) for d in days)
+    return len(prev & last) / len(prev) if prev else 1.0
 
 
 def refresh_massive() -> dict:
@@ -172,7 +188,8 @@ def run(source: str, live: bool = False) -> dict:
     t0 = time.time()
     try:
         res = (LIVE if live else REFRESHERS)[source]()
-        store.set_source(source, last_success=store.now_utc(), last_error=None, running=False, provisional=live,
+        store.set_source(source, last_success=store.now_utc(), last_error=None, running=False,
+                         provisional=bool(live or (isinstance(res, dict) and res.get("provisional"))),
                          result=res, seconds=round(time.time() - t0, 1), progress=None)
         store.log("info", source, f"refreshed in {time.time() - t0:.0f}s: { {k: v for k, v in res.items() if k != 'upstream_status'} }")
         return res

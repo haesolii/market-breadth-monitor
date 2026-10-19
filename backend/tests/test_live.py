@@ -70,3 +70,19 @@ def test_load_splices_recent_rows(monkeypatch):
     df = remote._load("t", (0.0, cached, "old", time.time()))
     assert list(df["x"]) == [1.0, 2.0, 3.5]
     assert any("WHERE date >=" in q for q in queries) and not any(q.endswith('"t"') for q in queries)
+
+
+def test_recent_part_only_when_history_unchanged():
+    d = [dt.date(2026, 9, 1), dt.date(2026, 10, 16), dt.date(2026, 10, 19)]
+    old = pd.DataFrame({"date": d, "x": [1.0, 2.0, 3.0]})
+    v = remote.version(old)
+    cut, rows = remote.recent_part(old.assign(x=[1.0, 2.0, 3.5]), v)  # only today changed
+    assert str(cut) == v["cut"] and list(rows["x"]) == [2.0, 3.5]
+    assert remote.recent_part(old.assign(x=[9.0, 2.0, 3.0]), v) is None  # history revised -> full write
+
+
+def test_coverage_flags_thin_last_session():
+    d0, d1 = dt.date(2026, 10, 16), dt.date(2026, 10, 19)
+    bars = pd.DataFrame({"date": [d0] * 100 + [d1] * 97, "ticker": list(range(100)) + list(range(97))})
+    assert refresh._coverage(bars) == 0.97 < refresh.MIN_COVERAGE
+    assert refresh._coverage(bars[bars["date"] == d0]) == 1.0

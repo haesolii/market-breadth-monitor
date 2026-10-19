@@ -3,7 +3,7 @@ import { useMemo, useState } from "react";
 import { DayDetail } from "@/components/DayDetail";
 import { Err, Kpi, Panel, RangePicker, useSource } from "@/components/bits";
 import { TimeChart } from "@/components/TimeChart";
-import { useApi, useBench, type Series } from "@/lib/api";
+import { LIVE_MS, useApi, useBench, type Series } from "@/lib/api";
 import { READ, cnt, defOf, fmt } from "@/lib/defs";
 
 const n = (v: unknown) => (typeof v === "number" ? v : null);
@@ -12,8 +12,8 @@ const delta = (a: number | null, b: number | null) => (a === null || b === null 
 export default function Overview() {
   const [src, srcSel, st] = useSource("breadth20");
   const [mmSrc, mmSel] = useSource("monitor");
-  const b = useApi<Series>(src ? `/api/breadth20?source=${src}` : null);
-  const mm = useApi<Series>(mmSrc ? `/api/monitor?source=${mmSrc}` : null);
+  const b = useApi<Series>(src ? `/api/breadth20?source=${src}` : null, LIVE_MS);
+  const mm = useApi<Series>(mmSrc ? `/api/monitor?source=${mmSrc}` : null, LIVE_MS);
 
   const [range, setRange] = useState(126);
   const [sel, setSel] = useState<string | null>(null);

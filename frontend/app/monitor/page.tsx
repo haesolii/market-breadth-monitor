@@ -4,7 +4,7 @@ import { Err, Panel, RangePicker, useSource } from "@/components/bits";
 import { LevelsEditor } from "@/components/LevelsEditor";
 import { TimeChart } from "@/components/TimeChart";
 import { Input } from "@/components/ui/input";
-import { useApi, useBench, type Series } from "@/lib/api";
+import { LIVE_MS, useApi, useBench, type Series } from "@/lib/api";
 import { downloadCSV } from "@/lib/csv";
 import { BB_DEFS, DEFS, READ, US_N, cellClass, defOf, defaultLevels, fmt, type Levels } from "@/lib/defs";
 import { useSetting } from "@/lib/settings";
@@ -18,7 +18,7 @@ const readOf = (k: string, r: Record<string, unknown>) => {
 
 export default function Monitor() {
   const [src, srcSel, st] = useSource("monitor", true);
-  const mm = useApi<Series>(src ? `/api/monitor?source=${src}` : null);
+  const mm = useApi<Series>(src ? `/api/monitor?source=${src}` : null, LIVE_MS);
   // Comparison panel: the market's ETF by default (tradeable), or the index itself.
   const [benchKind, setBenchKind] = useSetting<"etf" | "index">("mm.benchKind", "etf");
   const bench = useBench(benchKind === "etf" ? st?.source_info[src]?.etf ?? "SPY" : st?.source_info[src]?.benchmark ?? "^GSPC");

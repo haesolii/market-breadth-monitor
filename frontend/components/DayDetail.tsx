@@ -1,5 +1,5 @@
 "use client";
-import { useApi, type Status } from "@/lib/api";
+import { LIVE_MS, useApi, type Status } from "@/lib/api";
 import { DEFS, READ, fmt } from "@/lib/defs";
 import { Panel } from "./bits";
 
@@ -18,7 +18,7 @@ const split = (s: string) => [s.slice(0, s.indexOf(" ")), s.slice(s.indexOf(" ")
  * One line per market / indicator; criteria and English names live in tooltips. */
 export function DayDetail({ date, mmSource }: { date: string | null; mmSource?: string }) {
   const { data: st } = useApi<Status>("/api/status");
-  const { data, error } = useApi<Day>(date ? `/api/day?date=${date}${mmSource ? `&mm_source=${mmSource}` : ""}` : null);
+  const { data, error } = useApi<Day>(date ? `/api/day?date=${date}${mmSource ? `&mm_source=${mmSource}` : ""}` : null, LIVE_MS);
   if (!date) return <Panel title="선택한 날짜 상세 (Day detail)"><div className="text-sm text-zinc-500">차트에서 날짜를 클릭하세요.</div></Panel>;
   const mon = data?.monitor;
   return (

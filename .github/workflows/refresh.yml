@@ -2,16 +2,17 @@ name: Refresh data
 
 # Collect + compute, then publish results to Supabase (when configured).
 # Cron is UTC: 23:15 = after the US close is final (19:15 EDT / 18:15 EST),
-# 09:40 = after the Korean close (18:40 KST). Every 5 minutes while Korea (00:00-08:59 UTC =
-# 09:00-17:59 KST) or the US (13:00-22:59 UTC) is open or not yet final: --live publishes
-# provisional values for today's session. Stale-only logic makes extra runs cheap.
-# GitHub delays or drops busy schedules, so actual spacing is often longer than 5 minutes.
+# 09:40 = after the Korean close (18:40 KST). GitHub delays scheduled runs by hours or drops
+# them, so a 5-minute cron never actually ran: instead one run keeps refreshing every
+# 5 minutes for as long as Korea (09:00-18:00 KST) or the US (09:30-18:00 ET) is open or not yet
+# final (--live publishes provisional values), and the hourly starters only need one of them to
+# fire per session. Extra starters queue behind the running loop and finish in one quick pass.
 on:
   schedule:
     - cron: "15 23 * * *"
     - cron: "40 9 * * *"
-    - cron: "*/5 0-8 * * 1-5"
-    - cron: "*/5 13-22 * * 1-5"
+    - cron: "7 0-8 * * 1-5"
+    - cron: "7 13-22 * * 1-5"
   workflow_dispatch: {}
 
 concurrency:
@@ -21,7 +22,7 @@ concurrency:
 jobs:
   refresh:
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    timeout-minutes: 350
     env:
       HAS_SUPABASE: ${{ secrets.SUPABASE_DB_URL != '' }}
       HAS_TELEGRAM: ${{ secrets.TELEGRAM_BOT_TOKEN != '' }}
@@ -56,18 +57,27 @@ jobs:
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
         run: python -m app.publish --pull-config
 
-      - name: Collect and compute
+      # Refresh + publish, then again every 5 minutes while a market session is live
+      # (GitHub caps a job at 6 h; stop after ~5 h 30 m so the data cache still saves).
+      - name: Collect, compute and publish
         env:
           DATA_DIR: ${{ github.workspace }}/data
           MASSIVE_API_KEY: ${{ secrets.MASSIVE_API_KEY }}
-        run: python -m app.refresh --only-stale --live
-
-      - name: Publish to Supabase
-        if: env.HAS_SUPABASE == 'true'
-        env:
-          DATA_DIR: ${{ github.workspace }}/data
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
-        run: python -m app.publish
+        run: |
+          start=$(date +%s); fails=0
+          while :; do
+            if python -m app.refresh --only-stale --live && { [ "$HAS_SUPABASE" != true ] || python -m app.publish; }; then
+              fails=0
+            else
+              fails=$((fails + 1)); echo "::warning::pass failed ($fails in a row)"
+              [ $fails -ge 3 ] && exit 1
+            fi
+            live=$(python -c "from app.market_calendar import live_session, CALENDARS; print(int(any(live_session(cal=c) for c in CALENDARS)))")
+            [ "$live" = 1 ] && [ $(( $(date +%s) - start )) -lt 19800 ] || break
+            sleep $(( 300 - $(date +%s) % 300 ))
+          done
+          [ $fails -eq 0 ]
 
       # Morning run (after the US close) or manual run: usage + data report to Telegram.
       - name: Daily report
@@ -79,9 +89,9 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: python -m app.report
 
-      # Intraday runs (every 5 min) don't alert, or one outage would flood the chat.
+      # Hourly intraday starters don't alert, or one outage would flood the chat.
       - name: Failure alert
-        if: failure() && env.HAS_TELEGRAM == 'true' && !startsWith(github.event.schedule, '*/5')
+        if: failure() && env.HAS_TELEGRAM == 'true' && !startsWith(github.event.schedule, '7 ')
         env:
           DATA_DIR: ${{ github.workspace }}/data
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}

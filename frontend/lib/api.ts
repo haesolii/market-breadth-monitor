@@ -3,6 +3,13 @@ import { useCallback, useEffect, useState } from "react";
 
 export type Row = Record<string, number | string | boolean | null>;
 
+/** Deployed site: the auth token from the readable mb_key cookie, sent as X-Mb-Key so the CDN
+ * can cache API answers per key (it refuses to cache on Vary: Cookie). */
+function authKey(): Record<string, string> {
+  const m = typeof document === "undefined" ? null : document.cookie.match(/(?:^|; )mb_key=([^;]+)/);
+  return m ? { "X-Mb-Key": decodeURIComponent(m[1]) } : {};
+}
+
 // Components mounted together (status bar, source selectors, day detail) share one request per URL.
 const recent = new Map<string, { t: number; p: Promise<unknown> }>();
 const SHARE_MS = 3000;
@@ -13,7 +20,7 @@ export function getJSON<T = unknown>(url: string, fresh = false): Promise<T> {
   // fresh (reload after an edit): a unique query skips the deployed site's 1-minute CDN cache.
   const src = fresh ? `${url}${url.includes("?") ? "&" : "?"}_t=${Date.now()}` : url;
   const p = (async () => {
-    const r = await fetch(src, { cache: "no-store" });
+    const r = await fetch(src, { cache: "no-store", headers: authKey() });
     const body = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error((body as { detail?: string }).detail ?? `${r.status} ${r.statusText}`);
     return body as T;

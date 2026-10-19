@@ -66,8 +66,13 @@ def test_cdn_cache_headers(monkeypatch):
     if not any(getattr(rt, "path", "") == "/api/_cdn_probe" for rt in main.app.routes):
         main.app.add_api_route("/api/_cdn_probe", lambda: {"ok": True})  # no store access (remote.ON would hit Supabase)
     c = TestClient(main.app)
-    assert "Vercel-CDN-Cache-Control" not in c.get("/api/_cdn_probe").headers  # 401
+    key = {"X-Mb-Key": token}
+    assert c.get("/api/_cdn_probe", headers=key).status_code == 401  # key without cookie: no data from the origin
     c.cookies.set("mb_auth", token)
-    r = c.get("/api/_cdn_probe")
-    assert r.status_code == 200 and r.headers["Vercel-CDN-Cache-Control"].startswith("max-age=60") and r.headers["Vary"] == "Cookie"
-    assert "Vercel-CDN-Cache-Control" not in c.get("/api/visit").headers
+    r = c.get("/api/_cdn_probe")  # cookie only: served, not cacheable, readable key cookie handed out
+    assert r.status_code == 200 and "Vercel-CDN-Cache-Control" not in r.headers and "mb_key" in r.headers.get("set-cookie", "")
+    assert "Vercel-CDN-Cache-Control" not in c.get("/api/_cdn_probe", headers={"X-Mb-Key": "wrong"}).headers
+    r = c.get("/api/_cdn_probe", headers=key)
+    assert r.headers["Vercel-CDN-Cache-Control"].startswith("max-age=60") and r.headers["Vary"] == "X-Mb-Key"
+    assert "set-cookie" not in r.headers  # a Set-Cookie would make it uncacheable
+    assert "Vercel-CDN-Cache-Control" not in c.get("/api/visit", headers=key).headers

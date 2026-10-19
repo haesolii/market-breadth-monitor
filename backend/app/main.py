@@ -54,13 +54,18 @@ async def require_login(request: Request, call_next):
     if request.url.path == "/api/visit":  # page load + every 10 min from the status bar (never cached)
         usage.record_visit(request)
     res = await call_next(request)
-    if remote.ON and request.method == "GET" and res.status_code == 200 and request.url.path not in NO_CDN:
-        # Deployed site: the CDN answers repeat GETs, so API work does not grow with viewers.
-        # Vary: Cookie keys the cache by the auth cookie (one shared token), so a request without
-        # it never gets a cached answer and still reaches the 401 above.
+    # Deployed site: the CDN answers repeat GETs, so API work does not grow with viewers.
+    # Vercel won't cache on Vary: Cookie, so the dashboard also sends the token as X-Mb-Key
+    # (from the readable mb_key cookie) and the cache is keyed by that header. Only requests
+    # carrying the right key are cacheable; anything else misses and reaches the check above.
+    key = request.headers.get("x-mb-key", "")
+    if (remote.ON and request.method == "GET" and res.status_code == 200 and request.url.path not in NO_CDN
+            and (not _TOKEN or hmac.compare_digest(key, _TOKEN))):
         ttl, swr = CDN_TTL.get(request.url.path, (60, 60))
         res.headers["Vercel-CDN-Cache-Control"] = f"max-age={ttl}, stale-while-revalidate={swr}"
-        res.headers["Vary"] = "Cookie"
+        res.headers["Vary"] = "X-Mb-Key"
+    elif _TOKEN and request.cookies.get("mb_key") != _TOKEN:  # logged in before mb_key existed
+        res.set_cookie("mb_key", _TOKEN, max_age=60 * 60 * 24 * 30, secure=True, samesite="lax")
     return res
 
 
@@ -85,6 +90,7 @@ async def login(request: Request):
         return RedirectResponse(f"/login?error=1&next={urllib.parse.quote(nxt)}", status_code=303)
     res = RedirectResponse(nxt, status_code=303)
     res.set_cookie("mb_auth", _TOKEN, max_age=60 * 60 * 24 * 30, httponly=True, secure=True, samesite="lax")
+    res.set_cookie("mb_key", _TOKEN, max_age=60 * 60 * 24 * 30, secure=True, samesite="lax")  # readable: sent as X-Mb-Key
     return res
 
 

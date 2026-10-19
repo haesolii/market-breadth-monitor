@@ -42,12 +42,13 @@ export function StatusBar() {
   return (
     <div className="flex flex-wrap items-center gap-x-5 gap-y-1 border-b border-zinc-800 bg-zinc-950 px-4 py-2 text-xs">
       <span>
-        최신 완료 거래일 (Expected session): <b className="text-zinc-100">{st.expected_session}</b>
+        최신 완료 거래일 (Expected session): <b className="text-zinc-100">미국 {st.expected_session}</b>
+        {st.expected_sessions?.XKRX && <b className="text-zinc-100"> · 한국 {st.expected_sessions.XKRX}</b>}
       </span>
       {["public_repo", "yahoo", "kospi", "kosdaq", "massive", "indices"]
         .filter((s) => st.sources[s]?.enabled)
         .map((s) => (
-          <span key={s} className={st.sources[s].latest_date === (st.sources[s].expected ?? st.expected_session) ? "text-emerald-400" : "text-amber-400"}>
+          <span key={s} className={(st.sources[s].latest_date ?? "") >= (st.sources[s].expected ?? st.expected_session) ? "text-emerald-400" : "text-amber-400"}>
             {st.source_info[s]?.short ?? (s === "indices" ? "세계 지수" : s)}: {st.sources[s].latest_date ?? "없음"}
             {st.sources[s].provisional ? " (장중 잠정)" : ""}
             {st.sources[s].running ? " ⟳" : ""}

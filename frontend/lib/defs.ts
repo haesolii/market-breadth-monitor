@@ -78,12 +78,21 @@ export const fmt = (v: unknown, digits = 0) =>
       ? v.toLocaleString("en-US", { maximumFractionDigits: digits, minimumFractionDigits: digits })
       : String(v);
 
+type Vals = Record<string, number | null | undefined>;
+
+/** Stockbee's count thresholds (300, 500, 1,000 ...) were set on the whole US market (~5,000 stocks).
+ * Smaller universes (나스닥·코스피·코스닥) scale them by universe size; the US keeps the originals. */
+export const US_N = 5000;
+export const scaleOf = (x: Vals) => Math.min(1, (x.eligible_universe_count || US_N) / US_N);
+/** A US count threshold expressed for this row's universe (at least 1). */
+export const cnt = (base: number, x: Vals) => Math.max(1, Math.ceil(base * scaleOf(x) - 1e-9));  // round up: small markets stay conservative
+
 export type Levels = Record<string, [number | null, number | null]>;
-/** Default highlight levels. Count thresholds come from the original US readings, so for other
- * markets (나스닥·코스피·코스닥, different universe sizes) only scale-free ones (ratios, T2108) are preset. */
-export const defaultLevels = (market = "yahoo"): Levels => {
-  const us = market === "yahoo" || market === "massive" || market === "public_repo";
-  return Object.fromEntries(ALL_DEFS.map((d) => [d.key, us || d.kind === "ratio" || d.kind === "pct" ? d.levels : [null, null]]));
+/** Default highlight levels; count levels scaled to the universe size `n` (latest eligible count). */
+export const defaultLevels = (n?: number | null): Levels => {
+  const x = { eligible_universe_count: n };
+  const sc = (v: number | null) => (v === null ? null : cnt(v, x));
+  return Object.fromEntries(ALL_DEFS.map((d) => [d.key, d.kind === "up" || d.kind === "down" ? [sc(d.levels[0]), sc(d.levels[1])] : d.levels]));
 };
 
 /** Tailwind classes for a cell: green for up-type, red for down-type, darker past the user's levels. */
@@ -102,41 +111,42 @@ export function cellClass(d: Def, v: unknown, levels: Levels): string {
   return v >= mid ? "text-emerald-400" : "text-red-400";
 }
 
-type Vals = Record<string, number | null | undefined>;
 const at = (x: Vals, k: string) => x[k] ?? 0;
-/** Stockbee reading criteria + today's interpretation per Market Monitor row. Count thresholds are US-universe. */
-export const READ: Record<string, { rule: string; read: (v: number, x: Vals) => string }> = {
-  up4: { rule: "300↑ 매수세 강화, 500↑ 강한 매수세",
-    read: (v) => v >= 500 ? "🟢 강한 매수세" : v >= 300 ? "🟢 매수세 강화" : v >= 100 ? "⚪ 보통" : "🔴 매수세 매우 약함" },
-  down4: { rule: "500~1,000 강한 매도세, 1,000↑ 극단적 투매",
-    read: (v, x) => v >= 1000 ? "🔴 극단적 투매" : v >= 500 ? "🔴 강한 매도세" : v > at(x, "up4") ? "🟠 매도 우위, 극단적 투매는 아님" : "⚪ 매도 압력 낮음" },
-  ratio5: { rule: "1 미만 매도 우위, 0.5 이하 약세 심화",
+const f = (v: number) => v.toLocaleString("en-US");
+/** Stockbee reading criteria + interpretation per Market Monitor row. Count thresholds are scaled
+ * to the row's universe (cnt), so rule(x) prints the thresholds actually applied. */
+export const READ: Record<string, { rule: (x: Vals) => string; read: (v: number, x: Vals) => string }> = {
+  up4: { rule: (x) => `${f(cnt(300, x))}↑ 매수세 강화, ${f(cnt(500, x))}↑ 강한 매수세`,
+    read: (v, x) => v >= cnt(500, x) ? "🟢 강한 매수세" : v >= cnt(300, x) ? "🟢 매수세 강화" : v >= cnt(100, x) ? "⚪ 보통" : "🔴 매수세 매우 약함" },
+  down4: { rule: (x) => `${f(cnt(500, x))}~${f(cnt(1000, x))} 강한 매도세, ${f(cnt(1000, x))}↑ 극단적 투매`,
+    read: (v, x) => v >= cnt(1000, x) ? "🔴 극단적 투매" : v >= cnt(500, x) ? "🔴 강한 매도세" : v > at(x, "up4") ? "🟠 매도 우위, 극단적 투매는 아님" : "⚪ 매도 압력 낮음" },
+  ratio5: { rule: () => "1 미만 매도 우위, 0.5 이하 약세 심화",
     read: (v) => v >= 2 ? "🟢 강한 매수세" : v >= 1 ? "🟢 매수 우위" : v > 0.5 ? "🟠 매도 우위" : "🔴 단기 약세 심화" },
-  ratio10: { rule: "0.5 이하 약세 신호, 2 이상 강한 매수세",
+  ratio10: { rule: () => "0.5 이하 약세 신호, 2 이상 강한 매수세",
     read: (v) => v >= 2 ? "🟢 강한 매수세 (thrust)" : v >= 1 ? "🟢 매수 우위" : v <= 0.5 ? "🔴 약세 신호" : v < 0.6 ? "🟠 약세 기준 근접" : "🟠 매도 우위" },
-  quarter_up25: { rule: "500 이하 반등 관찰, 200 이하 극단적 약세",
-    read: (v, x) => v <= 200 ? "🔴 극단적 약세" : v <= 500 ? "🟠 반등 관찰 구간" : v < at(x, "quarter_down25") ? "🟠 중기 상승 종목 부족" : "🟢 중기 상승 우위" },
-  quarter_down25: { rule: "상승 종목 수와 비교해 중기 추세 판단",
+  quarter_up25: { rule: (x) => `${f(cnt(500, x))} 이하 반등 관찰, ${f(cnt(200, x))} 이하 극단적 약세`,
+    read: (v, x) => v <= cnt(200, x) ? "🔴 극단적 약세" : v <= cnt(500, x) ? "🟠 반등 관찰 구간" : v < at(x, "quarter_down25") ? "🟠 중기 상승 종목 부족" : "🟢 중기 상승 우위" },
+  quarter_down25: { rule: () => "상승 종목 수와 비교해 중기 추세 판단",
     read: (v, x) => v > 2 * at(x, "quarter_up25") ? "🔴 중기 하락 종목 압도적" : v > at(x, "quarter_up25") ? "🟠 중기 하락 우위" : "🟢 중기 상승 우위" },
-  month_up25: { rule: "상승 종목 수의 확대·축소 관찰",
-    read: (v, x) => v >= 200 ? "🟢 강한 상승 확산" : v >= at(x, "month_down25") ? "🟢 상승 우위" : v >= at(x, "month_down25") / 2 ? "🟠 상승 탄력 약함" : "🔴 단기 상승 탄력 부족" },
-  month_down25: { rule: "상승 종목 수와 비교해 하락 확산 평가",
+  month_up25: { rule: (x) => `${f(cnt(200, x))}↑ 강한 상승 확산, 하락 종목 수와 비교`,
+    read: (v, x) => v >= cnt(200, x) ? "🟢 강한 상승 확산" : v >= at(x, "month_down25") ? "🟢 상승 우위" : v >= at(x, "month_down25") / 2 ? "🟠 상승 탄력 약함" : "🔴 단기 상승 탄력 부족" },
+  month_down25: { rule: () => "상승 종목 수와 비교해 하락 확산 평가",
     read: (v, x) => v > 2 * at(x, "month_up25") ? "🔴 하락 종목 우세" : v > at(x, "month_up25") ? "🟠 하락 우위" : "🟢 상승 우위" },
-  month_up50: { rule: "극단적 상승 종목의 확산 여부 관찰",
-    read: (v, x) => v >= 20 ? "🟢 강한 상승 확산 (과열 주의)" : v < at(x, "month_down50") ? "🔴 강한 상승 종목 희소" : "⚪ 보통" },
-  month_down50: { rule: "20개 초과 시 극단적 약세, 역추세 반등 관찰",
-    read: (v) => v > 20 ? "🟠 극단적 하락, 반등 가능성 관찰" : "⚪ 보통" },
-  day34_up13: { rule: "상승 종목의 증가·감소 추세 확인",
+  month_up50: { rule: (x) => `${f(cnt(20, x))}↑ 과열, 하락 종목 수와 비교`,
+    read: (v, x) => v >= cnt(20, x) ? "🟢 강한 상승 확산 (과열 주의)" : v < at(x, "month_down50") ? "🔴 강한 상승 종목 희소" : "⚪ 보통" },
+  month_down50: { rule: (x) => `${f(cnt(20, x))}개 초과 시 극단적 약세, 역추세 반등 관찰`,
+    read: (v, x) => v > cnt(20, x) ? "🟠 극단적 하락, 반등 가능성 관찰" : "⚪ 보통" },
+  day34_up13: { rule: () => "상승 종목의 증가·감소 추세 확인",
     read: (v, x) => v >= at(x, "day34_down13") ? "🟢 상승 종목 우위" : v >= at(x, "day34_down13") / 3 ? "🟠 반등 종목 존재하나 우세하지 않음" : "🔴 상승 종목 희소" },
-  day34_down13: { rule: "상승 종목과 비교해 시장 폭 판단",
+  day34_down13: { rule: () => "상승 종목과 비교해 시장 폭 판단",
     read: (v, x) => v > 2 * at(x, "day34_up13") ? "🔴 광범위한 약세" : v > at(x, "day34_up13") ? "🟠 하락 우위" : "🟢 상승 우위" },
-  day34_diff: { rule: "양수 상승 우위, 음수 하락 우위",
+  day34_diff: { rule: () => "양수 상승 우위, 음수 하락 우위",
     read: (v) => v > 0 ? "🟢 상승 종목 우위" : v < 0 ? "🔴 하락 압력 우세" : "⚪ 균형" },
   // 20% Bull/Bear: no published Stockbee thresholds; 50/100 are this app's default Bear lines.
-  bull: { rule: "Bear 수와 비교 (앱 기준, 원문 임계값 없음)",
+  bull: { rule: () => "Bear 수와 비교 (앱 기준, 원문 임계값 없음)",
     read: (v, x) => v >= 2 * at(x, "bear") ? "🟢 상승 모멘텀 우위" : v >= at(x, "bear") ? "🟢 상승 우위" : v >= at(x, "bear") / 2 ? "🟠 하락 우위" : "🔴 상승 모멘텀 부족" },
-  bear: { rule: "50↑ 급락 증가, 100↑ 극단적 급락 (앱 기본 기준선)",
-    read: (v, x) => v >= 100 ? "🔴 극단적 급락, 과매도 반등 관찰" : v >= 50 ? "🟠 급락 종목 증가" : v > at(x, "bull") ? "🟠 하락 우위" : "⚪ 급락 압력 낮음" },
-  t2108: { rule: "20% 미만 극단적 과매도, 80% 초과 과매수",
+  bear: { rule: (x) => `${f(cnt(50, x))}↑ 급락 증가, ${f(cnt(100, x))}↑ 극단적 급락 (앱 기본 기준선)`,
+    read: (v, x) => v >= cnt(100, x) ? "🔴 극단적 급락, 과매도 반등 관찰" : v >= cnt(50, x) ? "🟠 급락 종목 증가" : v > at(x, "bull") ? "🟠 하락 우위" : "⚪ 급락 압력 낮음" },
+  t2108: { rule: () => "20% 미만 극단적 과매도, 80% 초과 과매수",
     read: (v) => v < 20 ? "🔴 극단적 과매도, 반등 관찰" : v < 30 ? "🟠 약세·과매도 접근" : v > 80 ? "🟠 과매수" : v >= 50 ? "🟢 양호" : "⚪ 중립" },
 };

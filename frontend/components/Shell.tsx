@@ -39,27 +39,27 @@ export function StatusBar() {
   if (!st) return <div className="px-4 py-2 text-xs text-zinc-500">상태 확인 중…</div>;
   const errs = Object.entries(st.sources).filter(([, s]) => s.enabled && s.last_error);
   const lastOk = Object.values(st.sources).map((s) => s.last_success).filter(Boolean).sort().pop();
+  // One line: overall state + the two markets' sessions; only lagging / provisional sources are named.
+  const shown = ["public_repo", "yahoo", "kospi", "kosdaq", "massive", "indices"].filter((s) => st.sources[s]?.enabled);
+  const label = (s: string) => st.source_info[s]?.short ?? (s === "indices" ? "세계 지수" : s);
+  const lag = shown.filter((s) => (st.sources[s].latest_date ?? "") < (st.sources[s].expected ?? st.expected_session));
+  const prov = shown.filter((s) => st.sources[s].provisional);
+  const schedule = process.env.NEXT_PUBLIC_AUTH === "1"
+    ? "갱신: 장중 약 5분마다 (잠정값) · 확정 08:15 (미국) · 18:40 (한국) KST"
+    : `갱신: 미국 ${st.final_hours?.NYSE ?? 18}:00 ET · 한국 ${st.final_hours?.XKRX ?? 18}:00 KST 이후 (${st.refresh_min ?? 15}분마다 확인)`;
+  const detail = [...shown.map((s) => `${label(s)}: ${st.sources[s].latest_date ?? "없음"}${st.sources[s].provisional ? " (장중 잠정)" : ""}`), schedule].join("\n");
   return (
-    <div className="flex flex-wrap items-center gap-x-5 gap-y-1 border-b border-zinc-800 bg-zinc-950 px-4 py-2 text-xs">
-      <span>
-        최신 완료 거래일 (Expected session): <b className="text-zinc-100">미국 {st.expected_session}</b>
+    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-b border-zinc-800 bg-zinc-950 px-4 py-2 text-xs">
+      <span className="cursor-help" title={detail}>
+        <span className={lag.length ? "text-amber-400" : "text-emerald-400"}>●</span>{" "}
+        {lag.length ? "일부 지연" : "데이터 최신"}
+        <span className="text-zinc-400"> · 완료 거래일 </span><b className="text-zinc-100">미국 {st.expected_session}</b>
         {st.expected_sessions?.XKRX && <b className="text-zinc-100"> · 한국 {st.expected_sessions.XKRX}</b>}
       </span>
-      {["public_repo", "yahoo", "kospi", "kosdaq", "massive", "indices"]
-        .filter((s) => st.sources[s]?.enabled)
-        .map((s) => (
-          <span key={s} className={(st.sources[s].latest_date ?? "") >= (st.sources[s].expected ?? st.expected_session) ? "text-emerald-400" : "text-amber-400"}>
-            {st.source_info[s]?.short ?? (s === "indices" ? "세계 지수" : s)}: {st.sources[s].latest_date ?? "없음"}
-            {st.sources[s].provisional ? " (장중 잠정)" : ""}
-            {st.sources[s].running ? " ⟳" : ""}
-          </span>
-        ))}
-      <span className="text-zinc-400">마지막 성공 (Last success): {localTime(lastOk)}</span>
-      <span className="text-zinc-500">
-        {process.env.NEXT_PUBLIC_AUTH === "1"
-          ? "갱신: 장중 약 5분마다 (잠정값) · 확정 08:15 (미국) · 18:40 (한국) KST"
-          : `갱신: 미국 ${st.final_hours?.NYSE ?? 18}:00 ET · 한국 ${st.final_hours?.XKRX ?? 18}:00 KST 이후 (${st.refresh_min ?? 15}분마다 확인)`}
-      </span>
+      {lag.map((s) => <span key={s} className="text-amber-400">{label(s)} {st.sources[s].latest_date ?? "없음"}</span>)}
+      {prov.length > 0 && <span className="text-sky-400" title="장중 값으로 계산한 잠정치 — 장 마감 확정 후 다시 계산됩니다">장중 잠정: {prov.map(label).join(", ")}</span>}
+      {shown.some((s) => st.sources[s].running) && <span className="text-sky-400">갱신 중 ⟳</span>}
+      <span className="text-zinc-500" title={schedule}>마지막 갱신 {localTime(lastOk)}</span>
       {errs.length > 0 && (
         <Link href="/data" className="text-red-400 underline">
           오류 {errs.length}건 (errors)

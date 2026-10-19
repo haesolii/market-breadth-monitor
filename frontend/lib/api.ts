@@ -3,11 +3,21 @@ import { useCallback, useEffect, useState } from "react";
 
 export type Row = Record<string, number | string | boolean | null>;
 
-export async function getJSON<T = unknown>(url: string): Promise<T> {
-  const r = await fetch(url, { cache: "no-store" });
-  const body = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error((body as { detail?: string }).detail ?? `${r.status} ${r.statusText}`);
-  return body as T;
+// Components mounted together (status bar, source selectors, day detail) share one request per URL.
+const recent = new Map<string, { t: number; p: Promise<unknown> }>();
+const SHARE_MS = 3000;
+
+export function getJSON<T = unknown>(url: string, fresh = false): Promise<T> {
+  const hit = recent.get(url);
+  if (!fresh && hit && Date.now() - hit.t < SHARE_MS) return hit.p as Promise<T>;
+  const p = (async () => {
+    const r = await fetch(url, { cache: "no-store" });
+    const body = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error((body as { detail?: string }).detail ?? `${r.status} ${r.statusText}`);
+    return body as T;
+  })();
+  recent.set(url, { t: Date.now(), p });
+  return p;
 }
 
 export async function send<T = unknown>(url: string, method: string, body?: unknown): Promise<T> {
@@ -26,10 +36,10 @@ export function useApi<T = unknown>(url: string | null, refreshMs?: number) {
   const [data, setData] = useState<T | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const load = useCallback(() => {
+  const load = useCallback((fresh = false) => {
     if (!url) return;
     setLoading(true);
-    getJSON<T>(url)
+    getJSON<T>(url, fresh)
       .then((d) => { setData(d); setError(null); })
       .catch((e) => setError(e instanceof Error ? e.message : String(e)))
       .finally(() => setLoading(false));
@@ -37,10 +47,10 @@ export function useApi<T = unknown>(url: string | null, refreshMs?: number) {
   useEffect(() => {
     load();
     if (!refreshMs) return;
-    const t = setInterval(load, refreshMs);
+    const t = setInterval(() => load(), refreshMs);
     return () => clearInterval(t);
   }, [load, refreshMs]);
-  return { data, error, loading, reload: load };
+  return { data, error, loading, reload: () => load(true) };  // reload after a change: skip the shared request
 }
 
 export type SourceInfo = { label: string; short?: string; real: boolean; tickers: boolean; market?: boolean; cal?: string; benchmark?: string; etf?: string;

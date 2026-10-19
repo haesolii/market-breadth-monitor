@@ -1,14 +1,19 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
-/** Per-browser preference persisted in localStorage (safe if storage is unavailable). */
+/** Per-browser preference persisted in localStorage (safe if storage is unavailable).
+ * A key change (e.g. per-market setting) loads that key's value, or `initial` when none is stored. */
 export function useSetting<T>(key: string, initial: T): [T, (v: T) => void] {
   const [v, setV] = useState<T>(initial);
+  const init = useRef(initial);
+  init.current = initial;
   useEffect(() => {
+    let nv = init.current;
     try {
       const s = localStorage.getItem(key);
-      if (s !== null) setV(JSON.parse(s));
+      if (s !== null) nv = JSON.parse(s);
     } catch {}
+    setV(nv);
   }, [key]);
   const set = (nv: T) => {
     setV(nv);

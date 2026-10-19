@@ -90,7 +90,13 @@ export default function Research() {
       {data && (
         <>
           <Panel title={<>결과: 이벤트 {data.n_events}건 / 분석일 {data.n_days}일 <span className="text-zinc-500">({data.range[0]} ~ {data.range[1]}, {data.source})</span></>}>
-            {data.n_events < 20 && <div className="mb-2 rounded bg-amber-950 px-2 py-1 text-xs text-amber-300">⚠ 표본이 적습니다 (n &lt; 20). 통계적으로 신뢰하기 어렵습니다.</div>}
+            {data.n_events < 30 && <div className="mb-2 rounded bg-amber-950 px-2 py-1 text-xs text-amber-300">⚠ 표본이 적습니다 (n = {data.n_events} &lt; 30). 평균·p값 모두 신뢰하기 어렵습니다.</div>}
+            {mode === "independent" && data.n_events > 1 && (
+              <div className="mb-2 rounded bg-zinc-900 px-2 py-1 text-xs text-zinc-400">
+                ⓘ “매일 독립 사건”은 연속된 날을 각각 세므로 이후 수익률 구간이 겹칩니다 — 실제 독립 표본은 n보다 적고 p값은 실제보다 작게 나옵니다.
+                <button className="ml-1 text-sky-400 underline" onClick={() => setMode("cluster")}>연속 발생 묶기로 보기</button>
+              </div>
+            )}
             <div className="overflow-x-auto">
               <table className="w-full font-mono text-xs">
                 <thead className="text-zinc-400"><tr>
@@ -107,7 +113,8 @@ export default function Research() {
                         <td>{s?.win_rate !== undefined ? `${s.win_rate.toFixed(1)}%` : "—"}</td>
                         <td className={tone(s?.max)}>{pct(s?.max)}</td><td className={tone(s?.min)}>{pct(s?.min)}</td><td>{s?.std ? s.std.toFixed(2) : "—"}</td>
                         <td className="border-l border-zinc-800">{pct(b?.mean)}</td><td>{b?.win_rate !== undefined ? `${b.win_rate.toFixed(1)}%` : "—"}</td>
-                        <td className={s?.p_vs_baseline !== null && s?.p_vs_baseline !== undefined && s.p_vs_baseline < 0.05 ? "text-sky-400" : ""}>{s?.p_vs_baseline?.toFixed(3) ?? "—"}</td>
+                        <td title="Welch t-검정 (이벤트 이후 수익률 vs 같은 기간 전체 거래일) — 겹치는 구간·적은 표본에선 과대평가됨"
+                          className={s?.p_vs_baseline !== null && s?.p_vs_baseline !== undefined && s.p_vs_baseline < 0.05 && data.n_events >= 30 && mode === "cluster" ? "text-sky-400" : ""}>{s?.p_vs_baseline?.toFixed(3) ?? "—"}</td>
                       </tr>
                     );
                   })}

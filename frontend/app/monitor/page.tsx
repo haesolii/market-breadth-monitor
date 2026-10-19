@@ -6,7 +6,7 @@ import { TimeChart } from "@/components/TimeChart";
 import { Input } from "@/components/ui/input";
 import { useApi, useBench, type Series } from "@/lib/api";
 import { downloadCSV } from "@/lib/csv";
-import { BB_DEFS, DEFS, READ, cellClass, defOf, defaultLevels, fmt, type Levels } from "@/lib/defs";
+import { BB_DEFS, DEFS, READ, US_N, cellClass, defOf, defaultLevels, fmt, type Levels } from "@/lib/defs";
 import { useSetting } from "@/lib/settings";
 
 const COLS = [...DEFS, ...BB_DEFS];
@@ -22,7 +22,7 @@ export default function Monitor() {
   // Comparison panel: the market's ETF by default (tradeable), or the index itself.
   const [benchKind, setBenchKind] = useSetting<"etf" | "index">("mm.benchKind", "etf");
   const bench = useBench(benchKind === "etf" ? st?.source_info[src]?.etf ?? "SPY" : st?.source_info[src]?.benchmark ?? "^GSPC");
-  const [levels] = useSetting<Levels>(`mm.levels.${src}`, defaultLevels(src));
+  const [storedLevels] = useSetting<Levels | null>(`mm.levels.${src}`, null);
   const [metric, setMetric] = useState("t2108");
   const [range, setRange] = useState(252);
   const [from, setFrom] = useState("");
@@ -34,6 +34,8 @@ export default function Monitor() {
   const filtered = useMemo(() => rows.filter((r) => (!from || String(r.date) >= from) && (!to || String(r.date) <= to)), [rows, from, to]);
   const table = useMemo(() => [...filtered].reverse(), [filtered]);
   const latest = rows.at(-1);
+  const universeN = n(latest?.eligible_universe_count);
+  const levels = storedLevels ?? defaultLevels(universeN);
   const chartRows = useMemo(() => (range && !from && !to ? filtered.slice(-range) : filtered), [filtered, range, from, to]);
   const dates = useMemo(() => chartRows.map((r) => String(r.date)), [chartRows]);
   const d = defOf(metric)!;
@@ -84,12 +86,12 @@ export default function Monitor() {
                 <div className="flex justify-between gap-2"><span className="text-zinc-400">{c.ko}</span>
                   <span className="font-mono text-zinc-200">{fmt(latest[c.key], c.kind === "ratio" || c.kind === "pct" ? 2 : 0)}</span></div>
                 <div className="text-zinc-200">{readOf(c.key, latest) ?? "—"}</div>
-                <div className="text-[10px] text-zinc-600">기준: {READ[c.key]?.rule}</div>
+                <div className="text-[10px] text-zinc-600">기준: {READ[c.key]?.rule(latest as Record<string, number | null>)}</div>
               </button>
             ))}
           </div>
           <div className="mt-2 text-[11px] text-zinc-500">
-            가장 최근 거래일 값으로 자동 해석 · 종목 수 기준(300·500·1,000 등)은 미국 전체 시장 기준이라 국내 시장엔 그대로 맞지 않을 수 있습니다 · 아래 표 셀에 마우스를 올리면 그날의 해석이 보입니다.
+            가장 최근 거래일 값으로 자동 해석 · 종목 수 기준(미국 원문 300·500·1,000 등)은 시장 규모에 맞춰 환산 ({universeN?.toLocaleString("en-US") ?? "—"}종목 ÷ 미국 {US_N.toLocaleString("en-US")}종목 기준) · 아래 표 셀에 마우스를 올리면 그날의 해석이 보입니다.
           </div>
         </Panel>
       )}
@@ -107,7 +109,7 @@ export default function Monitor() {
           </>
         }
       >
-        {editLevels && <div className="mb-2"><LevelsEditor market={src} label={info?.short ?? src} /></div>}
+        {editLevels && <div className="mb-2"><LevelsEditor market={src} label={info?.short ?? src} n={universeN} /></div>}
         <div className="max-h-[70vh] overflow-auto">
           <table className="w-full border-collapse font-mono text-xs">
             <thead className="sticky top-0 z-10 bg-zinc-900 text-zinc-300">

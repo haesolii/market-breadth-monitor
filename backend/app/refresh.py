@@ -202,7 +202,11 @@ def refresh(sources: list[str] | None = None, only_stale: bool = False, live: bo
             ld = latest_date(s)
             # indices span many exchanges (e.g. Korea closes before the NYSE session is final),
             # so they are never skipped as "not stale"; the download is a few seconds.
-            if (only_stale and s != "indices" and ld is not None
+            # macro follows release schedules, not sessions: refreshed every PERIODIC["macro"].
+            if only_stale and s == "macro":
+                if time.time() - _last_ok(s) < PERIODIC[s]:
+                    continue
+            elif (only_stale and s != "indices" and ld is not None
                     and ld >= latest_complete_session(cal=universes.cal_of(s)) and not _provisional(s)):
                 continue
             out[s] = run(s)

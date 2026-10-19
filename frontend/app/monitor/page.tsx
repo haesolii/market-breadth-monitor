@@ -124,7 +124,12 @@ export default function Monitor() {
             <tbody>
               {table.slice(0, limit).map((r) => (
                 <tr key={String(r.date)} className="border-b border-zinc-900 text-center">
-                  <td className="whitespace-nowrap px-2 py-0.5 text-left text-zinc-400">{String(r.date)}</td>
+                  <td className="whitespace-nowrap px-2 py-0.5 text-left text-zinc-400">
+                    {String(r.date)}
+                    {st?.sources[src]?.provisional && String(r.date) === st.sources[src].latest_date && (
+                      <span className="ml-1 rounded bg-sky-900 px-1 text-sky-200" title="장중 값으로 계산한 잠정치 — 장 마감 확정 후 다시 계산됩니다">잠정</span>
+                    )}
+                  </td>
                   {COLS.map((c) => (
                     <td key={c.key} title={readOf(c.key, r)} className={`px-2 py-0.5 ${cellClass(c, r[c.key], levels)}`}>{fmt(r[c.key], c.kind === "ratio" || c.kind === "pct" ? 2 : 0)}</td>
                   ))}

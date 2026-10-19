@@ -12,6 +12,7 @@ ET = ZoneInfo("America/New_York")
 # Close is 16:00 ET / 15:30 KST; the buffer covers late prints and provider publishing lag.
 CALENDARS = {"NYSE": (ET, 18), "XKRX": (ZoneInfo("Asia/Seoul"), 18)}
 FINAL_HOUR_ET = 18
+OPEN = {"NYSE": (9, 30), "XKRX": (9, 0)}  # local regular-session open
 # pandas_market_calendars builds holidays lazily and is not thread-safe on first use
 # (concurrent API requests on a cold server crashed with '_holidays' AttributeError).
 _lock = threading.Lock()
@@ -37,3 +38,12 @@ def latest_complete_session(now: dt.datetime | None = None, cal: str = "NYSE") -
     if days[-1] == now.date() and now.hour < final_hour:
         return days[-2]
     return days[-1]
+
+
+def live_session(now: dt.datetime | None = None, cal: str = "NYSE") -> dt.date | None:
+    """Today's session while it is open or not yet final (open .. final hour), else None."""
+    tz, final_hour = CALENDARS[cal]
+    now = (now or dt.datetime.now(dt.timezone.utc)).astimezone(tz)
+    if sessions(now.date(), now.date(), cal) and OPEN[cal] <= (now.hour, now.minute) and now.hour < final_hour:
+        return now.date()
+    return None

@@ -53,7 +53,7 @@ export type Status = {
   expected_sessions?: Record<string, string>;
   final_hours?: Record<string, number>;
   refresh_min?: number;
-  sources: Record<string, { latest_date: string | null; expected?: string; derived_from?: string | null; last_success?: string; last_attempt?: string; last_error?: string | null; last_error_at?: string; running?: boolean; progress?: string | null; result?: Record<string, unknown>; enabled: boolean }>;
+  sources: Record<string, { latest_date: string | null; expected?: string; derived_from?: string | null; last_success?: string; last_attempt?: string; last_error?: string | null; last_error_at?: string; running?: boolean; provisional?: boolean; progress?: string | null; result?: Record<string, unknown>; enabled: boolean }>;
   log: { t: string; level: string; source: string; msg: string }[];
   scheduler?: { last_check: string; target_session: string };
   breadth20_sources: string[];

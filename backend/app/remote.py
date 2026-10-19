@@ -5,6 +5,7 @@
 - On Vercel (STORE=supabase) the API reads those tables instead of local files and
   writes only the small user-owned settings (indices list, manual reference values).
 """
+import datetime as dt
 import io
 import json
 import os
@@ -15,7 +16,9 @@ import pandas as pd
 
 DB_URL = os.getenv("SUPABASE_DB_URL", "").strip()
 ON = os.getenv("STORE", "") == "supabase" and bool(DB_URL)
-CACHE_SECONDS = 600  # data changes twice a day (after each publish)
+CACHE_SECONDS = 60  # data changes every few minutes while a market is open (intraday publishes)
+SPLICE_DAYS = 10  # changed tables are re-read only from this many days before the cached end
+FULL_SECONDS = 3600  # ...and in full at least this often (older rows can change, e.g. split refetch)
 
 _cache: dict[str, tuple[float, object]] = {}
 _lock = threading.Lock()
@@ -54,24 +57,52 @@ def read_table(name: str) -> pd.DataFrame:
         hit = _cache.get("t:" + name)
         if hit and time.time() - hit[0] < CACHE_SECONDS:
             return hit[1]  # type: ignore[return-value]
-        return _load(name)
+        return _load(name, hit)
 
 
-def _load(name: str) -> pd.DataFrame:
+def _load(name: str, hit=None) -> pd.DataFrame:
+    """Unchanged version -> keep the cached frame; changed -> re-read only the last
+    SPLICE_DAYS (intraday publishes touch recent rows), full read if rows don't add up."""
     with _connect() as con, con.cursor() as cur:
-        cur.execute("SELECT to_regclass(%s)", (name,))
-        if cur.fetchone()[0] is None:
-            df = pd.DataFrame()
+        ensure_kv(cur)
+        cur.execute("""SELECT value -> %s FROM "kv" WHERE key = 'versions'""", (name,))
+        row = cur.fetchone()
+        ver = row[0] if row else None
+        full_at = hit[3] if hit and len(hit) > 3 else 0.0
+        if hit and ver and len(hit) > 2 and hit[2] == ver.get("hash"):
+            df = hit[1]
         else:
-            cur.execute(f"SELECT * FROM {_q(name)}")
-            cols = [d.name for d in cur.description]
-            df = pd.DataFrame(cur.fetchall(), columns=cols)
-            for c in df.columns:  # Postgres numeric -> float, keep dates as date objects
-                if df[c].dtype == object and len(df) and type(df[c].dropna().iloc[0]).__name__ == "Decimal":
-                    df[c] = df[c].astype(float)
+            cur.execute("SELECT to_regclass(%s)", (name,))
+            if cur.fetchone()[0] is None:
+                df = pd.DataFrame()
+            elif hit and ver and len(hit[1]) and "date" in hit[1].columns and time.time() - full_at < FULL_SECONDS:
+                cut = max(hit[1]["date"]) - dt.timedelta(days=SPLICE_DAYS)
+                new = _select(cur, f"SELECT * FROM {_q(name)} WHERE date >= %s", (cut,))
+                df = pd.concat([hit[1][hit[1]["date"] < cut], new], ignore_index=True)
+                if len(df) != ver.get("rows"):
+                    df, full_at = _select(cur, f"SELECT * FROM {_q(name)}"), time.time()
+            else:
+                df, full_at = _select(cur, f"SELECT * FROM {_q(name)}"), time.time()
+        con.commit()
     with _lock:
-        _cache["t:" + name] = (time.time(), df)
+        _cache["t:" + name] = (time.time(), df, (ver or {}).get("hash"), full_at)
     return df
+
+
+def _select(cur, sql: str, params=()) -> pd.DataFrame:
+    cur.execute(sql, params)
+    cols = [d.name for d in cur.description]
+    df = pd.DataFrame(cur.fetchall(), columns=cols)
+    for c in df.columns:  # Postgres numeric -> float, keep dates as date objects
+        if df[c].dtype == object and len(df) and type(df[c].dropna().iloc[0]).__name__ == "Decimal":
+            df[c] = df[c].astype(float)
+    return df
+
+
+def version(df: pd.DataFrame) -> dict:
+    """Content fingerprint published next to each table (read side skips unchanged tables)."""
+    h = int(pd.util.hash_pandas_object(df, index=False).sum()) if len(df) else 0
+    return {"hash": f"{h & (2**64 - 1):016x}-{len(df)}", "rows": len(df)}
 
 
 _PG = {"b": "boolean", "i": "bigint", "u": "bigint", "f": "double precision"}

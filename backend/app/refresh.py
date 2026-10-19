@@ -11,7 +11,7 @@ import pandas as pd
 from . import indicators, macro, store, universes, world
 from .collectors import massive, public, yahoo
 from .config import KR_SCANNER, MASSIVE_API_KEY, MASSIVE_START, REFRESH_INTERVAL_MIN, YAHOO_HISTORY, YAHOO_SCANNER
-from .market_calendar import latest_complete_session, sessions
+from .market_calendar import CALENDARS, latest_complete_session, live_session, sessions
 
 _busy = threading.Lock()
 
@@ -40,9 +40,10 @@ def _save_computed(source: str, bars: pd.DataFrame) -> dict:
     return {"sessions": len(b20), "first_date": str(b20["date"].min()), "latest_date": str(b20["date"].max())}
 
 
-def _clean_bars(bars: pd.DataFrame, cal: str = "NYSE") -> pd.DataFrame:
-    """Keep only completed sessions of the exchange calendar; one row per (ticker, date)."""
-    last = latest_complete_session(cal=cal)
+def _clean_bars(bars: pd.DataFrame, cal: str = "NYSE", live: bool = False) -> pd.DataFrame:
+    """Keep only completed sessions of the exchange calendar (plus today's in-progress
+    session when live); one row per (ticker, date)."""
+    last = (live and live_session(cal=cal)) or latest_complete_session(cal=cal)
     valid = set(sessions(min(bars["date"]), last, cal))
     bars = bars[bars["date"].isin(valid)]
     return bars.drop_duplicates(["ticker", "date"], keep="last").sort_values(["ticker", "date"]).reset_index(drop=True)
@@ -60,18 +61,21 @@ def refresh_public() -> dict:
             "upstream_status": st}
 
 
-def refresh_universe(name: str) -> dict:
+def refresh_universe(name: str, live: bool = False) -> dict:
     """Yahoo-priced universe (US / KOSPI / KOSDAQ): update the listing, fetch new
-    tickers in full and known tickers for the last month, then recompute."""
+    tickers in full and known tickers for the last month, then recompute.
+    live: keep today's in-progress bar (provisional values, replaced after the close)."""
     cfg = universes.UNIVERSES[name]
-    u = cfg["load"]()
     today = dt.date.today().isoformat()
     old_u = store.read(f"universe_{name}")
-    u = u.assign(listed=True, last_seen=today)
-    if len(old_u):
-        gone = old_u[~old_u["ticker"].isin(u["ticker"])].assign(listed=False)
-        u = pd.concat([u, gone], ignore_index=True)
-    store.write(f"universe_{name}", u)
+    if len(old_u) and old_u["last_seen"].max() == today:
+        u = old_u  # listing already updated today (intraday runs every few minutes)
+    else:
+        u = cfg["load"]().assign(listed=True, last_seen=today)
+        if len(old_u):
+            gone = old_u[~old_u["ticker"].isin(u["ticker"])].assign(listed=False)
+            u = pd.concat([u, gone], ignore_index=True)
+        store.write(f"universe_{name}", u)
     keep = u[(u["excluded_reason"] == "") & u["listed"]]
 
     old = store.read(cfg["bars"])
@@ -91,7 +95,7 @@ def refresh_universe(name: str) -> dict:
     parts += [b for b in (b_inc, b_full, b_split) if len(b)]
     bars = pd.concat(parts, ignore_index=True)
     bars["date"] = pd.to_datetime(bars["date"]).dt.date
-    bars = _clean_bars(bars, cfg["cal"])
+    bars = _clean_bars(bars, cfg["cal"], live)
     store.write(cfg["bars"], bars)
 
     failed = f1 + f2 + f3
@@ -104,7 +108,7 @@ def refresh_universe(name: str) -> dict:
         if d.get("derived_from") == name:
             sub = set(included.loc[included["exchange"] == d["exchange"], "ticker"])
             res[dname] = _save_computed(dname, bars[bars["ticker"].isin(sub)])
-            store.set_source(dname, last_success=store.now_utc(), last_error=None)
+            store.set_source(dname, last_success=store.now_utc(), last_error=None, provisional=live)
     return {**res, "tickers": int(bars["ticker"].nunique()), "failed": len(failed),
             "split_refetched": len(split_t), "new_tickers": len(full)}
 
@@ -157,15 +161,18 @@ def scan_hits(source: str, date) -> pd.DataFrame:
 REFRESHERS = {"indices": world.refresh, "macro": macro.refresh, "public_repo": refresh_public,
               "yahoo": lambda: refresh_universe("yahoo"), "kospi": lambda: refresh_universe("kospi"),
               "kosdaq": lambda: refresh_universe("kosdaq"), "massive": refresh_massive}
+# Sources that can carry today's in-progress session (provisional until the close is final).
+LIVE = {"indices": lambda: world.refresh(live=True), "yahoo": lambda: refresh_universe("yahoo", True),
+        "kospi": lambda: refresh_universe("kospi", True), "kosdaq": lambda: refresh_universe("kosdaq", True)}
 
 
-def run(source: str) -> dict:
+def run(source: str, live: bool = False) -> dict:
     """Run one refresher with bookkeeping. Existing data is untouched on failure."""
     store.set_source(source, last_attempt=store.now_utc(), running=True)
     t0 = time.time()
     try:
-        res = REFRESHERS[source]()
-        store.set_source(source, last_success=store.now_utc(), last_error=None, running=False,
+        res = (LIVE if live else REFRESHERS)[source]()
+        store.set_source(source, last_success=store.now_utc(), last_error=None, running=False, provisional=live,
                          result=res, seconds=round(time.time() - t0, 1), progress=None)
         store.log("info", source, f"refreshed in {time.time() - t0:.0f}s: { {k: v for k, v in res.items() if k != 'upstream_status'} }")
         return res
@@ -176,15 +183,25 @@ def run(source: str) -> dict:
         return {"error": msg}
 
 
-def refresh(sources: list[str] | None = None, only_stale: bool = False) -> dict:
+def _provisional(source: str) -> bool:
+    return bool(store.status()["sources"].get(source, {}).get("provisional"))
+
+
+def refresh(sources: list[str] | None = None, only_stale: bool = False, live: bool = False) -> dict:
+    """live: sources in LIVE whose market is in session (open .. final hour) are refreshed
+    with today's in-progress bar; a provisional source counts as stale for only_stale."""
     if not _busy.acquire(blocking=False):
         return {"busy": True}
     try:
         out = {}
         for s in sources or enabled_sources():
+            cals = CALENDARS if s == "indices" else [universes.cal_of(s)]  # indices: US or Korea open
+            if live and s in LIVE and any(live_session(cal=c) for c in cals):
+                out[s] = run(s, live=True)
+                continue
             ld = latest_date(s)
             if (only_stale and ld is not None and ld >= latest_complete_session(cal=universes.cal_of(s))
-                    and not (s == "indices" and world.missing())):
+                    and not _provisional(s) and not (s == "indices" and world.missing())):
                 continue
             out[s] = run(s)
         return out
@@ -234,5 +251,6 @@ if __name__ == "__main__":
     ap = argparse.ArgumentParser(description="Refresh breadth data (used by Task Scheduler).")
     ap.add_argument("--source", action="append", help="indices|macro|public_repo|yahoo|kospi|kosdaq|massive (default: all enabled)")
     ap.add_argument("--only-stale", action="store_true")
+    ap.add_argument("--live", action="store_true", help="include today's in-progress session for markets now open")
     a = ap.parse_args()
-    print(refresh(a.source, a.only_stale))
+    print(refresh(a.source, a.only_stale, a.live))

@@ -178,7 +178,7 @@ export default function WorldPage() {
                   <td className="px-2">{r.inverse ? "—" : pc(r.dd52, false, 1)}</td>
                   <td className="px-2">{r.symbol === "^VIX" ? "—" : yn(r.above50)}</td><td className="px-2">{r.symbol === "^VIX" ? "—" : yn(r.above200)}</td>
                   <td className="px-2">{r.vol20 !== undefined && r.vol20 !== null ? (r.unit === "bp" ? `${r.vol20.toFixed(0)}bp` : `${r.vol20.toFixed(1)}%`) : "—"}</td>
-                  <td className="px-2 text-zinc-400">{r.date ?? "—"}{r.live && <span className="ml-1 rounded bg-sky-900 px-1 text-sky-200" title={`현재가 ${fmt(r.price, 2)} (장중 값은 저장하지 않음)`}>장중</span>}</td>
+                  <td className="px-2 text-zinc-400">{r.date ?? "—"}{r.live && <span className="ml-1 rounded bg-sky-900 px-1 text-sky-200" title={`현재가 ${fmt(r.price, 2)} (장중 잠정값 — 마감 확정 후 다시 저장)`}>장중</span>}</td>
                   <td className="px-2 text-left">
                     {r.flags.map((f) => <span key={f.code} className={`mr-1 inline-block whitespace-nowrap rounded px-1.5 font-sans ${BADGE[f.level][f.strong ? 1 : 0]}`}>{f.label}</span>)}
                   </td>

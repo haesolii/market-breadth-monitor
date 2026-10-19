@@ -49,13 +49,14 @@ export function StatusBar() {
         .map((s) => (
           <span key={s} className={st.sources[s].latest_date === (st.sources[s].expected ?? st.expected_session) ? "text-emerald-400" : "text-amber-400"}>
             {st.source_info[s]?.short ?? (s === "indices" ? "세계 지수" : s)}: {st.sources[s].latest_date ?? "없음"}
+            {st.sources[s].provisional ? " (장중 잠정)" : ""}
             {st.sources[s].running ? " ⟳" : ""}
           </span>
         ))}
       <span className="text-zinc-400">마지막 성공 (Last success): {localTime(lastOk)}</span>
       <span className="text-zinc-500">
         {process.env.NEXT_PUBLIC_AUTH === "1"
-          ? "갱신: 매일 08:15 (미국) · 18:40 (한국) KST"
+          ? "갱신: 장중 약 5분마다 (잠정값) · 확정 08:15 (미국) · 18:40 (한국) KST"
           : `갱신: 미국 ${st.final_hours?.NYSE ?? 18}:00 ET · 한국 ${st.final_hours?.XKRX ?? 18}:00 KST 이후 (${st.refresh_min ?? 15}분마다 확인)`}
       </span>
       {errs.length > 0 && (

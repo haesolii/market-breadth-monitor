@@ -59,7 +59,7 @@ def save_config(items: list[dict]) -> None:
     os.replace(tmp, CONFIG)
 
 
-def chart(symbol: str, s=None) -> tuple[pd.DataFrame, dict]:
+def chart(symbol: str, s=None, live: bool = False) -> tuple[pd.DataFrame, dict]:
     s = s or http_session()
     r = s.get(f"https://query2.finance.yahoo.com/v8/finance/chart/{symbol}",
               params={"period1": 946684800, "period2": int(time.time()), "interval": "1d"}, timeout=30)
@@ -79,11 +79,11 @@ def chart(symbol: str, s=None) -> tuple[pd.DataFrame, dict]:
         df[c] = df[c].fillna(df["close"])
     reg = (meta.get("currentTradingPeriod") or {}).get("regular") or {}
     now = time.time()
-    live = reg.get("start", 0) <= now < reg.get("end", 0)
+    in_session = reg.get("start", 0) <= now < reg.get("end", 0)
     today_local = dt.datetime.fromtimestamp(now + off, dt.timezone.utc).date()
-    if live and len(df) and df["date"].iloc[-1] == today_local:
+    if in_session and not live and len(df) and df["date"].iloc[-1] == today_local:
         df = df.iloc[:-1]  # in-progress session
-    info = {"tz": meta.get("exchangeTimezoneName"), "live": live, "price": meta.get("regularMarketPrice"),
+    info = {"tz": meta.get("exchangeTimezoneName"), "live": in_session, "price": meta.get("regularMarketPrice"),
             "yahoo_name": meta.get("longName") or meta.get("shortName"), "currency": meta.get("currency")}
     return df.assign(symbol=symbol), info
 
@@ -95,14 +95,15 @@ def missing() -> bool:
     return any(it["symbol"] not in have for it in config()) or any(k not in have for k in ETF_BENCH)
 
 
-def refresh() -> dict:
+def refresh(live: bool = False) -> dict:
+    """live: keep the in-progress bar of indices whose market is open (provisional)."""
     items = config()
     items += [{"symbol": k} for k in ETF_BENCH if k not in {it["symbol"] for it in items}]
     s = http_session(pool=8)
     old = store.read("indices")
     frames, meta, failed = [], {}, []
     with cf.ThreadPoolExecutor(8) as ex:
-        futs = {ex.submit(chart, it["symbol"], s): it["symbol"] for it in items}
+        futs = {ex.submit(chart, it["symbol"], s, live): it["symbol"] for it in items}
         for f in cf.as_completed(futs):
             sym = futs[f]
             try:

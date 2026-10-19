@@ -45,12 +45,18 @@ def publish() -> None:
     frames["scan_hits"] = _scan_table()
     report = validation.report()
     st = store.status()
+    old = remote.kv_get("versions") or {}
+    versions = {name: remote.version(df) for name, df in frames.items()}
     con = remote._connect()
     try:
         with con.cursor() as cur:
             for name, df in frames.items():
+                if old.get(name) == versions[name]:
+                    print(f"{name}: unchanged")
+                    continue
                 remote.write_table(name, df, cur)
                 print(f"{name}: {len(df):,} rows")
+            remote.kv_set("versions", versions, cur)
             remote.kv_set("status", st, cur)
             remote.kv_set("validation", report, cur)
             if remote.kv_get("indices_config") is None:  # seed once; afterwards the dashboard owns it

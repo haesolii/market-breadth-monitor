@@ -14,9 +14,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from . import indicators, macro, refresh, remote, research, store, universes, usage, validation, world
-from .config import MASSIVE_API_KEY, YAHOO_SCANNER
+from .config import MASSIVE_API_KEY, REFRESH_INTERVAL_MIN, YAHOO_SCANNER
 from .indicators import MM_COLS
-from .market_calendar import latest_complete_session
+from .market_calendar import CALENDARS, latest_complete_session
 
 SOURCE_INFO = {
     "massive": {"label": "Massive (자체 계산, 생존편향 없음)", "real": True, "tickers": True},
@@ -110,7 +110,8 @@ def status():
            "breadth20_sources": available("breadth20"), "monitor_sources": available("market_monitor_daily"),
            "default_breadth20": default_source("breadth20"), "default_monitor": default_source("market_monitor_daily"),
            "source_info": SOURCE_INFO,
-           "expected_sessions": {c: str(latest_complete_session(cal=c)) for c in ("NYSE", "XKRX")}}
+           "expected_sessions": {c: str(latest_complete_session(cal=c)) for c in ("NYSE", "XKRX")},
+           "final_hours": {c: h for c, (_, h) in CALENDARS.items()}, "refresh_min": REFRESH_INTERVAL_MIN}
     enabled = refresh.enabled_sources()
     for s in ["indices", "macro", "public_repo", "yahoo", "nasdaq", "kospi", "kosdaq", "massive"]:
         ld = refresh.latest_date(s)

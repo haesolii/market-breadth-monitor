@@ -53,6 +53,11 @@ export function StatusBar() {
           </span>
         ))}
       <span className="text-zinc-400">마지막 성공 (Last success): {localTime(lastOk)}</span>
+      <span className="text-zinc-500">
+        {process.env.NEXT_PUBLIC_AUTH === "1"
+          ? "갱신: 매일 08:15 (미국) · 18:40 (한국) KST"
+          : `갱신: 미국 ${st.final_hours?.NYSE ?? 18}:00 ET · 한국 ${st.final_hours?.XKRX ?? 18}:00 KST 이후 (${st.refresh_min ?? 15}분마다 확인)`}
+      </span>
       {errs.length > 0 && (
         <Link href="/data" className="text-red-400 underline">
           오류 {errs.length}건 (errors)
@@ -60,7 +65,7 @@ export function StatusBar() {
       )}
       {msg && <span className="text-sky-400">{msg}</span>}
       {process.env.NEXT_PUBLIC_AUTH === "1" ? (
-        <span className="ml-auto text-[11px] text-zinc-500">매일 자동 갱신</span>
+        <span className="ml-auto text-[11px] text-zinc-500">자동 갱신</span>
       ) : (
         <Button size="sm" variant="outline" className="ml-auto h-7" onClick={refresh} disabled={st.busy}>
           {st.busy ? "갱신 중…" : "수동 갱신 (Refresh)"}

@@ -4,7 +4,7 @@ import { DayDetail } from "@/components/DayDetail";
 import { Err, Kpi, Panel, RangePicker, useSource } from "@/components/bits";
 import { TimeChart } from "@/components/TimeChart";
 import { LIVE_MS, useApi, useBench, type Series } from "@/lib/api";
-import { READ, cnt, defOf, fmt } from "@/lib/defs";
+import { READ, bearLv, defOf, fmt } from "@/lib/defs";
 
 const n = (v: unknown) => (typeof v === "number" ? v : null);
 const delta = (a: number | null, b: number | null) => (a === null || b === null ? "—" : `${a - b >= 0 ? "+" : ""}${fmt(a - b)}`);
@@ -25,7 +25,7 @@ export default function Overview() {
   const dates = view.map((r) => String(r.date));
   const bull = n(last?.bull), bear = n(last?.bear);
   const bench = useBench(st?.source_info[src]?.benchmark ?? "^GSPC");
-  const bear100 = last ? cnt(100, last as Record<string, number | null>) : 100;
+  const bear100 = last ? bearLv(last as Record<string, number | null>, 2) : 100;
 
   const series = useMemo(() => [
     { name: "Bull (20%↑)", data: view.map((r) => n(r.bull)), color: "#10b981" },

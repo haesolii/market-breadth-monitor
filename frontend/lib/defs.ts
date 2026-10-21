@@ -112,6 +112,8 @@ export function cellClass(d: Def, v: unknown, levels: Levels): string {
 }
 
 const at = (x: Vals, k: string) => x[k] ?? 0;
+/** This row's market Bear line i (1..3). */
+export const bearLv = (x: Vals, i: 1 | 2 | 3) => x[`bear_l${i}`] ?? [50, 100, 150][i - 1];
 const f = (v: number) => v.toLocaleString("en-US");
 /** Stockbee reading criteria + interpretation per Market Monitor row. Count thresholds are scaled
  * to the row's universe (cnt), so rule(x) prints the thresholds actually applied. */
@@ -142,11 +144,12 @@ export const READ: Record<string, { rule: (x: Vals) => string; read: (v: number,
     read: (v, x) => v > 2 * at(x, "day34_up13") ? "🔴 광범위한 약세" : v > at(x, "day34_up13") ? "🟠 하락 우위" : "🟢 상승 우위" },
   day34_diff: { rule: () => "양수 상승 우위, 음수 하락 우위",
     read: (v) => v > 0 ? "🟢 상승 종목 우위" : v < 0 ? "🔴 하락 압력 우세" : "⚪ 균형" },
-  // 20% Bull/Bear: no published Stockbee thresholds; 50/100 are this app's default Bear lines.
+  // 20% Bull/Bear: no published Stockbee thresholds. Bear lines are calibrated per market (bear_l1/l2 on
+  // each row from the API, see docs "Bear 기준선"); US 50/100 when a row carries none.
   bull: { rule: () => "Bear 수와 비교 (앱 기준, 원문 임계값 없음)",
     read: (v, x) => v >= 2 * at(x, "bear") ? "🟢 상승 모멘텀 우위" : v >= at(x, "bear") ? "🟢 상승 우위" : v >= at(x, "bear") / 2 ? "🟠 하락 우위" : "🔴 상승 모멘텀 부족" },
-  bear: { rule: (x) => `${f(cnt(50, x))}↑ 급락 증가, ${f(cnt(100, x))}↑ 극단적 급락 (앱 기본 기준선)`,
-    read: (v, x) => v >= cnt(100, x) ? "🔴 극단적 급락, 과매도 반등 관찰" : v >= cnt(50, x) ? "🟠 급락 종목 증가" : v > at(x, "bull") ? "🟠 하락 우위" : "⚪ 급락 압력 낮음" },
+  bear: { rule: (x) => `${f(bearLv(x, 1))}↑ 급락 증가, ${f(bearLv(x, 2))}↑ 극단적 급락 (시장별 기준선)`,
+    read: (v, x) => v >= bearLv(x, 2) ? "🔴 극단적 급락, 과매도 반등 관찰" : v >= bearLv(x, 1) ? "🟠 급락 종목 증가" : v > at(x, "bull") ? "🟠 하락 우위" : "⚪ 급락 압력 낮음" },
   t2108: { rule: () => "20% 미만 극단적 과매도, 80% 초과 과매수",
     read: (v) => v < 20 ? "🔴 극단적 과매도, 반등 관찰" : v < 30 ? "🟠 약세·과매도 접근" : v > 80 ? "🟠 과매수" : v >= 50 ? "🟢 양호" : "⚪ 중립" },
 };

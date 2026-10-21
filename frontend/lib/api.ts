@@ -66,7 +66,7 @@ export function useApi<T = unknown>(url: string | null, refreshMs?: number) {
 }
 
 export type SourceInfo = { label: string; short?: string; real: boolean; tickers: boolean; market?: boolean; cal?: string; benchmark?: string; etf?: string;
-  params?: { price_floor: number; min_volume: number; min_dollar_vol: number; currency: string }; bear_levels?: number[] };
+  params?: { price_floor: number; min_volume: number; min_dollar_vol: number; currency: string } };
 export type Status = {
   expected_session: string;
   busy: boolean;

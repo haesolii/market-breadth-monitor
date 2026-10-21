@@ -21,7 +21,8 @@ export default function BullBear() {
   const bench = useBench(st?.source_info[src]?.benchmark ?? "^GSPC");
   const [range, setRange] = useState(252);
   const [sel, setSel] = useState<string | null>(null);
-  const presets = st?.source_info[src]?.bear_levels ?? US_LINES;
+  const lastRow = b.data?.rows.at(-1) as Record<string, number | null> | undefined;
+  const presets = useMemo(() => US_LINES.map((y, i) => (lastRow ? bearLv(lastRow, (i + 1) as 1 | 2 | 3) : y)), [lastRow]);
   const [on, setOn] = useSetting<number[]>("bb.bearOn", [0, 1, 2]);  // which of the market's 3 lines
   const [customs, setCustoms] = useSetting<number[]>("bb.bearCustom", []);
   const [custom, setCustom] = useState("");
@@ -57,7 +58,7 @@ export default function BullBear() {
           <>
             {srcSel}
             <Select value={cmp} onChange={setCmp} options={[["", "비교 소스 없음"], ...others.map((s) => [s, `비교: ${st?.source_info[s]?.short ?? s}`] as [string, string])]} />
-            <span className="text-xs text-zinc-400" title="시장별 기준선: 미국 원본 50·100·150이 과거에 나타난 빈도(거래일의 6.9%·2.0%·1.1%)와 같은 빈도로 나타나는 수">Bear 기준선:</span>
+            <span className="text-xs text-zinc-400" title="미국 50·100·150 기준 — 미국 시장은 종목 수로 환산, 한국·크립토는 같은 빈도(거래일의 6.9%·2.0%·1.1%)로 나타나는 수">Bear 기준선:</span>
             {presets.map((v, i) => (
               <label key={i} className="flex items-center gap-1 text-xs"><input type="checkbox" checked={on.includes(i)} onChange={() => toggle(i)} />{v}</label>
             ))}
@@ -72,7 +73,7 @@ export default function BullBear() {
       >
         <TimeChart dates={dates} series={series} spy={spyData} lines={mk} onSelect={setSel} selected={sel} height={520} yName="종목 수" lowerName={bench.name} />
         <div className="mt-1 text-[11px] text-zinc-500">
-          녹색 = 20% 급등 종목 수, 빨간색(아래쪽) = 20% 급락 종목 수 · 차트를 클릭하면 날짜 상세가 표시됩니다(기본: 최근 거래일) · 표의 Bull/Bear 숫자에 마우스를 올리면 해석이 보입니다 · Bear 기준선은 시장마다 과거 데이터로 정한 값입니다 (미국 원본 50·100·150과 같은 빈도로 나타나는 수).
+          녹색 = 20% 급등 종목 수, 빨간색(아래쪽) = 20% 급락 종목 수 · 차트를 클릭하면 날짜 상세가 표시됩니다(기본: 최근 거래일) · 표의 Bull/Bear 숫자에 마우스를 올리면 해석이 보입니다 · Bear 기준선: 미국 시장은 50·100·150을 종목 수에 맞춰 환산, 한국·크립토는 미국과 같은 빈도로 나타나는 수로 보정했습니다.
         </div>
       </Panel>
       <div className="grid gap-3 xl:grid-cols-2">

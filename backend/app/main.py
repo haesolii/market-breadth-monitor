@@ -25,13 +25,6 @@ SOURCE_INFO = {
            "cal": v["cal"], "benchmark": v["benchmark"], "etf": v["etf"], "params": v["params"]}
        for k, v in universes.describe().items()},
 }
-for _k, _v in SOURCE_INFO.items():
-    _v["bear_levels"] = universes.bear_levels(_k)
-
-
-def _bear_cols(source: str) -> dict:
-    """The market's Bear lines on every row, so each reading uses its own market's levels."""
-    return dict(zip(("bear_l1", "bear_l2", "bear_l3"), universes.bear_levels(source)))
 
 _stop = threading.Event()
 
@@ -169,7 +162,7 @@ def do_refresh(bg: BackgroundTasks, source: str | None = None):
 def breadth20(source: str | None = None):
     source, df = table_for("breadth20", source)
     cols = [c for c in ["date", "bull", "bear", "elig_20", "eligible_universe_count"] if c in df]
-    return {"source": source, "rows": records(df[cols].assign(**_bear_cols(source)))}
+    return {"source": source, "rows": records(df[cols].assign(market=source))}
 
 
 @app.get("/api/monitor")
@@ -179,7 +172,7 @@ def monitor(source: str | None = None):
     if len(b20):
         df = df.merge(b20[b20["source"] == source][["date", "bull", "bear"]], on="date", how="left")
     cols = [c for c in df.columns if c not in ("source",)]
-    return {"source": source, "rows": records(df[cols])}
+    return {"source": source, "rows": records(df[cols].assign(market=source))}
 
 
 @app.get("/api/day")
@@ -196,14 +189,14 @@ def day(date: dt.date, source: str | None = None, mm_source: str | None = None):
                 if k - n >= 0:
                     row[f"bull_chg{n}"] = df.at[k, "bull"] - df.at[k - n, "bull"]
                     row[f"bear_chg{n}"] = df.at[k, "bear"] - df.at[k - n, "bear"]
-            out["breadth20"][s] = {**{k2: (None if pd.isna(v) else float(v)) for k2, v in row.items()}, **_bear_cols(s)}
+            out["breadth20"][s] = {**{k2: (None if pd.isna(v) else float(v)) for k2, v in row.items()}, "market": s}
     try:
         ms, mm = table_for("market_monitor_daily", mm_source)
         i = mm.index[mm["date"] == date]
         if len(i):
             k = i[0]
             cur = mm.loc[k, MM_COLS]
-            out["monitor"] = {"source": ms, "values": records(mm.loc[[k]])[0]}
+            out["monitor"] = {"source": ms, "values": {**records(mm.loc[[k]])[0], "market": ms}}
             for n in (5, 10):
                 if k - n >= 0:
                     prev = mm.loc[k - n, MM_COLS]

@@ -35,7 +35,7 @@ export default function Monitor() {
   const table = useMemo(() => [...filtered].reverse(), [filtered]);
   const latest = rows.at(-1);
   const universeN = n(latest?.eligible_universe_count);
-  const levels = storedLevels ?? defaultLevels(universeN);
+  const levels = storedLevels ?? defaultLevels(universeN, src);
   const chartRows = useMemo(() => (range && !from && !to ? filtered.slice(-range) : filtered), [filtered, range, from, to]);
   const dates = useMemo(() => chartRows.map((r) => String(r.date)), [chartRows]);
   const d = defOf(metric)!;

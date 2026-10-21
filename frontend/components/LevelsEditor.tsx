@@ -7,7 +7,7 @@ import { useSetting } from "@/lib/settings";
 /** Per-market highlight levels for the Market Monitor table (user setting, not a trading signal). */
 export function LevelsEditor({ market, label, n }: { market: string; label: string; n?: number | null }) {
   const [stored, setLevels] = useSetting<Levels | null>(`mm.levels.${market}`, null);
-  const levels = stored ?? defaultLevels(n);
+  const levels = stored ?? defaultLevels(n, market);
   const set = (k: string, i: 0 | 1, v: string) => {
     const cur = [...(levels[k] ?? [null, null])] as [number | null, number | null];
     cur[i] = v === "" || Number.isNaN(Number(v)) ? null : Number(v);
@@ -16,7 +16,7 @@ export function LevelsEditor({ market, label, n }: { market: string; label: stri
   return (
     <div className="rounded border border-zinc-800 p-2">
       <div className="mb-2 flex items-center text-xs text-zinc-400">
-        <span>{label} · 색상 강조 기준 (사용자 설정, 매매 신호 아님) · 빈칸 = 강조 안 함 · 종목 수 기본값은 미국 기준을 시장 규모({n ? n.toLocaleString("en-US") : "—"}종목)에 맞춰 환산</span>
+        <span>{label} · 색상 강조 기준 (사용자 설정, 매매 신호 아님) · 빈칸 = 강조 안 함 · 종목 수 기본값: 미국 시장은 미국 기준을 시장 규모({n ? n.toLocaleString("en-US") : "—"}종목)에 맞춰 환산, 한국·크립토는 같은 희소성으로 보정한 값</span>
         <Button size="sm" variant="ghost" className="ml-auto h-6" onClick={() => setLevels(null)}>기본값 복원</Button>
       </div>
       <div className="grid gap-x-6 gap-y-1 text-xs md:grid-cols-2">

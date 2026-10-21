@@ -48,18 +48,6 @@ UNIVERSES = {
                "benchmark": "BTC-USD", "etf": "BTC-USD", "load": crypto.universe, "fetch": crypto.fetch,
                "delisted_history": True, "bars": "bars_crypto"},
 }
-# 20% Bear reference lines per market (docs/indicator-definitions.md, "Bear 기준선"). Calibrated,
-# not scaled by universe size: each market's line is the count it reaches as rarely as the US
-# originals 50 / 100 / 150 do on the full US history (6.9% / 2.0% / 1.1% of sessions, 2016-2026),
-# then checked with an event study on the market's benchmark. Re-check when history grows.
-BEAR_LEVELS = {"public_repo": (50, 100, 150), "massive": (50, 100, 150), "yahoo": (55, 90, 115),
-               "nasdaq": (35, 65, 75), "kospi": (6, 14, 25), "kosdaq": (20, 55, 105), "crypto": (40, 180, 250)}
-
-
-def bear_levels(source: str) -> tuple[int, int, int]:
-    return BEAR_LEVELS.get(source, BEAR_LEVELS["public_repo"])
-
-
 # Provider-based sources that are always US / NYSE.
 SOURCE_CAL = {"public_repo": "NYSE", "massive": "NYSE", **{k: v["cal"] for k, v in UNIVERSES.items()}}
 

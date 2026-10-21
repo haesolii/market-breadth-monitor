@@ -37,6 +37,20 @@ def sessions(start: dt.date, end: dt.date, cal: str = "NYSE") -> list[dt.date]:
     return [d.date() for d in days]
 
 
+def session_elapsed(now: dt.datetime | None = None, cal: str = "NYSE") -> float:
+    """Share (0..1] of today's regular session that has elapsed (early closes included); 1 outside it."""
+    if cal == CRYPTO:
+        return 1.0
+    now = now or dt.datetime.now(dt.timezone.utc)
+    day = now.astimezone(CALENDARS[cal][0]).date()
+    with _lock:
+        s = _cal(cal).schedule(day, day)
+    if s.empty:
+        return 1.0
+    o, c = s["market_open"].iloc[0], s["market_close"].iloc[0]
+    return float(min(1.0, max((now - o) / (c - o), 0.05)))  # floor: first minutes would blow up 20x+
+
+
 def latest_complete_session(now: dt.datetime | None = None, cal: str = "NYSE") -> dt.date:
     if cal == CRYPTO:
         return ((now or dt.datetime.now(dt.timezone.utc)).astimezone(dt.timezone.utc) - dt.timedelta(minutes=10)).date() - dt.timedelta(days=1)

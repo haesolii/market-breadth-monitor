@@ -83,3 +83,12 @@ def test_crypto_halt_splits_series():
                       "close": [1.0] * 30 + [1000.0] * 30, "volume": 1e6})
     cut = indicators.cut_breaks(b, CRYPTO.daily_limit, CRYPTO.max_gap_days)
     assert set(cut[cut.ticker == "X"].close) == {1.0} and set(cut[cut.ticker == "X#1"].close) == {1000.0}
+
+
+def test_live_volume_is_paced_to_a_full_day():
+    import datetime as dt
+    from app import market_calendar as mc
+    # 2026-10-21 is a full NYSE session (09:30-16:00 ET = 13:30-20:00 UTC); at 16:45 UTC half has elapsed.
+    assert abs(mc.session_elapsed(dt.datetime(2026, 10, 21, 16, 45, tzinfo=dt.timezone.utc)) - 0.5) < 1e-9
+    assert mc.session_elapsed(dt.datetime(2026, 10, 21, 21, 0, tzinfo=dt.timezone.utc)) == 1.0
+    assert mc.session_elapsed(dt.datetime(2026, 10, 24, 15, 0, tzinfo=dt.timezone.utc)) == 1.0  # Saturday

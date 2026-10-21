@@ -11,7 +11,7 @@ import pandas as pd
 from . import indicators, macro, store, universes, world
 from .collectors import massive, public, yahoo
 from .config import CRYPTO_SCANNER, KR_SCANNER, MASSIVE_API_KEY, MASSIVE_START, REFRESH_INTERVAL_MIN, YAHOO_HISTORY, YAHOO_SCANNER
-from .market_calendar import CALENDARS, latest_complete_session, live_session, sessions
+from .market_calendar import CALENDARS, latest_complete_session, live_session, session_elapsed, sessions
 
 _busy = threading.Lock()
 
@@ -39,6 +39,20 @@ def _save_computed(source: str, bars: pd.DataFrame) -> dict:
     store.replace_source("breadth20", source, b20)
     store.replace_source("market_monitor_daily", source, mm)
     return {"sessions": len(b20), "first_date": str(b20["date"].min()), "latest_date": str(b20["date"].max())}
+
+
+def _paced(bars: pd.DataFrame, cal: str) -> pd.DataFrame:
+    """While today's session is live, project today's partial volume to a full day, so the
+    'volume >= min' and 'volume > yesterday' conditions compare like with like (stored bars stay raw)."""
+    today = live_session(cal=cal)
+    frac = session_elapsed(cal=cal)
+    if not today or frac >= 1 or bars.empty:
+        return bars
+    # ponytail: linear pace; overstates volume early in the day (U-shaped intraday volume).
+    b = bars.copy()
+    on = pd.to_datetime(b["date"]).dt.date == today
+    b.loc[on, "volume"] = b.loc[on, "volume"] / frac
+    return b
 
 
 def _clean_bars(bars: pd.DataFrame, cal: str = "NYSE", live: bool = False) -> pd.DataFrame:
@@ -107,7 +121,8 @@ def refresh_universe(name: str, live: bool = False) -> dict:
     if failed:
         store.log("warn", name, f"{len(failed)} tickers failed, e.g. {failed[:5]}")
     included = u[u["excluded_reason"] == ""]
-    res = _save_computed(name, bars[bars["ticker"].isin(set(included["ticker"]))])
+    calc = _paced(bars, cfg["cal"]) if live else bars
+    res = _save_computed(name, calc[calc["ticker"].isin(set(included["ticker"]))])
     # Yahoo publishes some tickers' close late; a thin last session stays provisional and is retried.
     cov = _coverage(bars)
     incomplete = live or cov < MIN_COVERAGE
@@ -115,7 +130,7 @@ def refresh_universe(name: str, live: bool = False) -> dict:
     for dname, d in universes.UNIVERSES.items():
         if d.get("derived_from") == name:
             sub = set(included.loc[included["exchange"] == d["exchange"], "ticker"])
-            res[dname] = _save_computed(dname, bars[bars["ticker"].isin(sub)])
+            res[dname] = _save_computed(dname, calc[calc["ticker"].isin(sub)])
             store.set_source(dname, last_success=store.now_utc(), last_error=None, provisional=incomplete)
     return {**res, "tickers": int(bars["ticker"].nunique()), "failed": len(failed),
             "split_refetched": len(split_t), "new_tickers": len(full), "coverage": round(cov, 4),
@@ -174,7 +189,7 @@ def scan_hits(source: str, date) -> pd.DataFrame:
         bars = massive.cached_bars()
         bars = bars[(bars["date"] >= lo) & (bars["date"] <= date)]
         bars = massive.adjust_for_splits(bars, massive.splits(massive.Client(), str(lo)))
-    bars = bars[bars["ticker"].isin(set(u["ticker"]))]
+    bars = _paced(bars[bars["ticker"].isin(set(u["ticker"]))], universes.UNIVERSES.get(source, {}).get("cal", "NYSE"))
     hits = indicators.scan(bars, date, universes.params_of(source))
     return hits.merge(u[["ticker", "name", "exchange"]], on="ticker", how="left")
 

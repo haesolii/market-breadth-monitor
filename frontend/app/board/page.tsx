@@ -7,7 +7,7 @@ import { useApi } from "@/lib/api";
 import { useSetting } from "@/lib/settings";
 
 type Item = { symbol: string; name: string; region: string };
-const REGION_ORDER = ["미국", "아시아", "유럽", "미주", "원자재", "채권"];
+const REGION_ORDER = ["미국", "아시아", "유럽", "미주", "원자재", "채권", "크립토"];
 // Board-only extras (not in the world-index list): refreshed with the Market Monitor ETFs (world.ETF_BENCH).
 const EXTRA: Item[] = [{ symbol: "RSP", name: "S&P 500 동일가중 (RSP)", region: "미국" }];
 

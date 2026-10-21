@@ -30,15 +30,18 @@ DEFAULT = [
     ("CL=F", "WTI 원유 (근월물)", "원자재"), ("BZ=F", "브렌트유 (근월물)", "원자재"),
     ("^IRX", "미국 13주 금리", "채권"), ("^FVX", "미국 5년물 금리", "채권"), ("^TNX", "미국 10년물 금리", "채권"),
     ("^TYX", "미국 30년물 금리", "채권"),
+    ("BTC-USD", "비트코인", "크립토"), ("ETH-USD", "이더리움", "크립토"),
 ]
 # Yahoo quotes these as yields in percent: changes are shown in basis points.
 YIELDS = {"^IRX", "^FVX", "^TNX", "^TYX"}
 # Higher = worse for stocks (fear / rates): colors and flags are inverted.
 INVERSE = {"^VIX"} | YIELDS
+# Trade 7 days a week: a year is 365 bars, a week 7 (vs 252 / 5 for exchanges).
+CRYPTO = {"BTC-USD", "ETH-USD"}
 # Tradeable ETFs used as the Market Monitor's comparison panel (stored with the indices,
 # but not part of the world-index list / summary).
 ETF_BENCH = {"SPY": "SPY (S&P 500 ETF)", "QQQ": "QQQ (나스닥100 ETF)", "RSP": "RSP (S&P 500 동일가중 ETF)",
-             "069500.KS": "KODEX 200", "229200.KS": "KODEX 코스닥150"}
+             "069500.KS": "KODEX 200", "229200.KS": "KODEX 코스닥150", "BTC-USD": "비트코인"}
 CONFIG = DATA / "indices.json"
 
 
@@ -140,24 +143,25 @@ def analyze(s: pd.Series, symbol: str, z_th: float, dd_th: float, today: dt.date
         chg = lambda base: (c / base - 1) * 100  # noqa: E731
         r = s.pct_change()
     ret = lambda n: chg(float(s.iloc[-1 - n])) if len(s) > n else None  # noqa: E731
+    yr, wk, mo, q = (365, 7, 30, 91) if symbol in CRYPTO else (252, 5, 21, 63)
     prev_year = s[[d.year < last.year for d in s.index]]
-    std1y = r.tail(252).std()
+    std1y = r.tail(yr).std()
     r1 = r.iloc[-1] if len(r) > 1 else np.nan
     z = float(r1 / std1y) if std1y and not np.isnan(r1) else None
-    w52 = s.tail(252)
+    w52 = s.tail(yr)
     hi, lo = float(w52.max()), float(w52.min())
     sma50 = float(s.tail(50).mean()) if len(s) >= 50 else None
     sma200_s = s.rolling(200).mean()
     sma200 = float(sma200_s.iloc[-1]) if len(s) >= 200 else None
     above = (s > sma200_s).tail(6).tolist() if len(s) >= 205 else []
     m = {
-        "date": str(last), "close": c, "chg1d": ret(1), "chg1w": ret(5), "chg1m": ret(21), "chg3m": ret(63),
+        "date": str(last), "close": c, "chg1d": ret(1), "chg1w": ret(wk), "chg1m": ret(mo), "chg3m": ret(q),
         "ytd": chg(float(prev_year.iloc[-1])) if len(prev_year) else None, "unit": "bp" if is_yield else "%",
         "hi52": hi, "lo52": lo, "dd52": None if is_yield else (c / hi - 1) * 100,
         "from_lo52": None if is_yield else (c / lo - 1) * 100,
         "sma50": sma50, "sma200": sma200,
         "above50": c > sma50 if sma50 else None, "above200": c > sma200 if sma200 else None,
-        "vol20": float(r.tail(20).std() * math.sqrt(252) * 100) if len(r) > 20 else None,  # bp/yr for yields
+        "vol20": float(r.tail(20).std() * math.sqrt(yr) * 100) if len(r) > 20 else None,  # bp/yr for yields
         "z1d": z, "stale_days": (today - last).days,
     }
     f = []
@@ -236,6 +240,9 @@ def correlation(df: pd.DataFrame, days: int = 60) -> dict:
     have = set(df["symbol"].unique())
     syms = [it["symbol"] for it in config() if it["symbol"] in have]
     w = df.pivot_table(index="date", columns="symbol", values="close").sort_index()[syms]
+    others = [c for c in syms if c not in CRYPTO]
+    if others:  # drop weekend-only crypto rows, else every Monday's exchange return becomes NaN
+        w = w[w[others].notna().any(axis=1)]
     rets = w.pct_change(fill_method=None).tail(days)
     cm = rets.corr(min_periods=int(days * 0.6)).round(2)
     return {"symbols": syms, "days": days,

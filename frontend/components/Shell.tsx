@@ -46,7 +46,7 @@ export function StatusBar() {
   const errs = Object.entries(st.sources).filter(([, s]) => s.enabled && s.last_error);
   const lastOk = Object.values(st.sources).map((s) => s.last_success).filter(Boolean).sort().pop();
   // One line: overall state + the two markets' sessions; only lagging / provisional sources are named.
-  const shown = ["public_repo", "yahoo", "kospi", "kosdaq", "massive", "indices"].filter((s) => st.sources[s]?.enabled);
+  const shown = ["public_repo", "yahoo", "kospi", "kosdaq", "crypto", "massive", "indices"].filter((s) => st.sources[s]?.enabled);
   const label = (s: string) => st.source_info[s]?.short ?? (s === "indices" ? "세계 지수" : s);
   const lag = shown.filter((s) => (st.sources[s].latest_date ?? "") < (st.sources[s].expected ?? st.expected_session));
   const prov = shown.filter((s) => st.sources[s].provisional);

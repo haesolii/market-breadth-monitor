@@ -109,7 +109,7 @@ def available(table: str) -> list[str]:
 
 def default_source(table: str) -> str | None:
     av = available(table)
-    for s in ("massive", "public_repo", "yahoo") if table == "breadth20" else ("massive", "yahoo", "nasdaq", "kospi", "kosdaq"):
+    for s in ("massive", "public_repo", "yahoo") if table == "breadth20" else ("massive", "yahoo", "nasdaq", "kospi", "kosdaq", "crypto"):
         if s in av:
             return s
     return None
@@ -136,7 +136,7 @@ def status():
            "expected_sessions": {c: str(latest_complete_session(cal=c)) for c in ("NYSE", "XKRX")},
            "final_hours": {c: h for c, (_, h) in CALENDARS.items()}, "refresh_min": REFRESH_INTERVAL_MIN}
     enabled = refresh.enabled_sources()
-    for s in ["indices", "macro", "public_repo", "yahoo", "nasdaq", "kospi", "kosdaq", "massive"]:
+    for s in ["indices", "macro", "public_repo", "yahoo", "nasdaq", "kospi", "kosdaq", "crypto", "massive"]:
         ld = refresh.latest_date(s)
         derived = universes.UNIVERSES.get(s, {}).get("derived_from")
         out["sources"][s] = {**st["sources"].get(s, {}), "latest_date": str(ld) if ld else None,
@@ -270,7 +270,7 @@ def scan_dates():
 @app.get("/api/scan")
 def scan(date: dt.date | None = None, source: str | None = None):
     if source not in (None, "massive", *universes.UNIVERSES):
-        raise HTTPException(400, "종목 단위 결과는 자체 계산 소스(미국 전체·나스닥·코스피·코스닥·massive)만 제공됩니다")
+        raise HTTPException(400, "종목 단위 결과는 자체 계산 소스(미국 전체·나스닥·코스피·코스닥·크립토·massive)만 제공됩니다")
     if remote.ON:
         h = store.read("scan_hits")
         source = source or "yahoo"

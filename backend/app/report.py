@@ -80,8 +80,9 @@ def usage_lines() -> list[str]:
 def data_lines() -> list[str]:
     st = store.status().get("sources", {})
     names = {"public_repo": "미국(상장폐지 포함)", "yahoo": "미국(현재 상장)", "kospi": "코스피", "kosdaq": "코스닥",
-             "indices": "세계 지수", "macro": "매크로"}
-    expected = {"kospi": latest_complete_session(cal="XKRX"), "kosdaq": latest_complete_session(cal="XKRX")}
+             "crypto": "크립토", "indices": "세계 지수", "macro": "매크로"}
+    expected = {"kospi": latest_complete_session(cal="XKRX"), "kosdaq": latest_complete_session(cal="XKRX"),
+                "crypto": latest_complete_session(cal="CRYPTO")}
     us = latest_complete_session()
     out = []
     b = store.read("breadth20")

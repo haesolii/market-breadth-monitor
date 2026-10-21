@@ -53,7 +53,7 @@ const pc = (v: number | undefined | null, inv = false, d = 2, unit: string = "%"
   return <span className={v === 0 ? "" : good ? "text-emerald-400" : "text-red-400"}>{v > 0 ? "+" : ""}{v.toFixed(unit === "bp" ? 1 : d)}{unit}</span>;
 };
 // Equity-index KPIs exclude commodities and bonds.
-const NON_EQUITY = new Set(["원자재", "채권"]);
+const NON_EQUITY = new Set(["원자재", "채권", "크립토"]);
 const yn = (v?: boolean) => (v === undefined || v === null ? "—" : v ? <span className="text-emerald-400">위</span> : <span className="text-red-400">아래</span>);
 
 export default function WorldPage() {
@@ -121,7 +121,7 @@ export default function WorldPage() {
     <div className="space-y-3">
       <Err error={w.error ?? w.data?.last_error ?? null} />
       <div className="grid grid-cols-2 gap-2 md:grid-cols-5">
-        <Kpi label="상승 마감 주가지수 (1일)" value={`${ups} / ${priced.length}`} tone={ups >= priced.length / 2 ? "up" : "down"} sub="VIX·원자재·채권 제외" />
+        <Kpi label="상승 마감 주가지수 (1일)" value={`${ups} / ${priced.length}`} tone={ups >= priced.length / 2 ? "up" : "down"} sub="VIX·원자재·채권·크립토 제외" />
         <Kpi label="200일선 위 지수 비율" value={a200.length ? `${Math.round((100 * a200.filter((r) => r.above200).length) / a200.length)}%` : "—"} sub={`${a200.filter((r) => r.above200).length}/${a200.length}개`} />
         <Kpi label="특이사항 발생 지수" value={flagged} tone={flagged ? "down" : "flat"} sub="아래 표에서 색상 강조" />
         <Kpi label="VIX" value={fmt(rows.find((r) => r.symbol === "^VIX")?.close, 2)} sub={<>1일 {pc(rows.find((r) => r.symbol === "^VIX")?.chg1d, true, 1)}</>} />

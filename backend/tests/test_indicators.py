@@ -73,3 +73,13 @@ def test_kr_params_and_breaks():
     assert len(cut[cut.ticker == "C"]) == n
     b20, _ = indicators.compute(bars(s), KR)
     assert b20.bull.fillna(0).max() == 0
+
+
+def test_crypto_halt_splits_series():
+    from app.universes import CRYPTO
+    d0 = dt.date(2024, 1, 1)
+    # 1000:1 redenomination after a 10-day halt: two series, no fake +99,900% move
+    b = pd.DataFrame({"date": [d0 + dt.timedelta(days=i) for i in [*range(30), *range(40, 70)]], "ticker": "X",
+                      "close": [1.0] * 30 + [1000.0] * 30, "volume": 1e6})
+    cut = indicators.cut_breaks(b, CRYPTO.daily_limit, CRYPTO.max_gap_days)
+    assert set(cut[cut.ticker == "X"].close) == {1.0} and set(cut[cut.ticker == "X#1"].close) == {1000.0}

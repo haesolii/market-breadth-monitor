@@ -67,7 +67,7 @@ export function Select({ value, onChange, options, className = "" }: { value: st
 }
 
 /** Data-source selector persisted per browser; returns [source, selector, status]. */
-const ORDER = ["public_repo", "yahoo", "nasdaq", "kospi", "kosdaq", "massive"];
+const ORDER = ["public_repo", "yahoo", "nasdaq", "kospi", "kosdaq", "crypto", "massive"];
 const byOrder = (a: string, b: string) => (ORDER.indexOf(a) + 99 * +(ORDER.indexOf(a) < 0)) - (ORDER.indexOf(b) + 99 * +(ORDER.indexOf(b) < 0));
 
 /** Data-source / market selector persisted per browser; returns [source, selector, status].

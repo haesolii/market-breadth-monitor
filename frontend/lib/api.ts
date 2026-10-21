@@ -88,7 +88,7 @@ export type Series = { source: string; rows: Row[] };
 
 export const BENCH_NAMES: Record<string, string> = {
   "^GSPC": "S&P 500", "^IXIC": "나스닥 종합", "^KS11": "코스피 지수", "^KQ11": "코스닥 지수",
-  SPY: "SPY", QQQ: "QQQ", "069500.KS": "KODEX 200", "229200.KS": "KODEX 코스닥150",
+  SPY: "SPY", QQQ: "QQQ", "069500.KS": "KODEX 200", "229200.KS": "KODEX 코스닥150", "BTC-USD": "비트코인",
 };
 
 /** Close-by-date map for a benchmark index stored in the world-index table. */

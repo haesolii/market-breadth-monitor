@@ -43,3 +43,16 @@ def test_yields_bp_and_inversion():
     rows = [{"symbol": "^TNX", "close": 4.0, "flags": []}, {"symbol": "^IRX", "close": 4.5, "flags": []}]
     world._curve_flag(rows)
     assert rows[0]["spread_10y3m"] == -50.0 and rows[0]["flags"][0]["code"] == "inverted"
+
+
+def test_crypto_weekends_keep_exchange_correlation(monkeypatch):
+    days = [dt.date(2025, 1, 1) + dt.timedelta(days=i) for i in range(140)]
+    wk = [d for d in days if d.weekday() < 5]
+    rng = np.random.default_rng(1)
+    a = 100 * np.cumprod(1 + rng.normal(0, 0.01, len(wk)))
+    df = pd.concat([pd.DataFrame({"date": wk, "symbol": "A", "close": a}),
+                    pd.DataFrame({"date": wk, "symbol": "B", "close": a * 2}),
+                    pd.DataFrame({"date": days, "symbol": "BTC-USD", "close": np.linspace(1, 2, len(days))})])
+    monkeypatch.setattr(world, "config", lambda: [{"symbol": s} for s in ("A", "B", "BTC-USD")])
+    c = world.correlation(df)
+    assert c["matrix"][0][1] == 1.0  # weekend crypto rows would leave too few A/B returns -> None

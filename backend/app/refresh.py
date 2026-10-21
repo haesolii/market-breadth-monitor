@@ -10,7 +10,7 @@ import pandas as pd
 
 from . import indicators, macro, store, universes, world
 from .collectors import massive, public, yahoo
-from .config import KR_SCANNER, MASSIVE_API_KEY, MASSIVE_START, REFRESH_INTERVAL_MIN, YAHOO_HISTORY, YAHOO_SCANNER
+from .config import CRYPTO_SCANNER, KR_SCANNER, MASSIVE_API_KEY, MASSIVE_START, REFRESH_INTERVAL_MIN, YAHOO_HISTORY, YAHOO_SCANNER
 from .market_calendar import CALENDARS, latest_complete_session, live_session, sessions
 
 _busy = threading.Lock()
@@ -18,7 +18,8 @@ _busy = threading.Lock()
 
 def enabled_sources() -> list[str]:
     return (["public_repo", "indices", "macro"] + (["yahoo"] if YAHOO_SCANNER else [])
-            + (["kospi", "kosdaq"] if KR_SCANNER else []) + (["massive"] if MASSIVE_API_KEY else []))
+            + (["kospi", "kosdaq"] if KR_SCANNER else []) + (["crypto"] if CRYPTO_SCANNER else [])
+            + (["massive"] if MASSIVE_API_KEY else []))
 
 
 def latest_date(source: str):
@@ -71,7 +72,8 @@ def refresh_universe(name: str, live: bool = False) -> dict:
     if len(old_u) and old_u["last_seen"].max() == today:
         u = old_u  # listing already updated today (intraday runs every few minutes)
     else:
-        u = cfg["load"]().assign(listed=True, last_seen=today)
+        u = cfg["load"]()
+        u = u.assign(listed=u["listed"] if "listed" in u else True, last_seen=today)
         if len(old_u):
             gone = old_u[~old_u["ticker"].isin(u["ticker"])].assign(listed=False)
             u = pd.concat([u, gone], ignore_index=True)
@@ -80,15 +82,18 @@ def refresh_universe(name: str, live: bool = False) -> dict:
 
     old = store.read(cfg["bars"])
     have = set(old["ticker"]) if len(old) else set()
-    full = {t: y for t, y in zip(keep["ticker"], keep["yahoo"]) if t not in have}
+    # Delisted names with downloadable history (crypto) are fetched once in full, never incrementally.
+    hist = u[u["excluded_reason"] == ""] if cfg.get("delisted_history") else keep
+    full = {t: y for t, y in zip(hist["ticker"], hist["yahoo"]) if t not in have}
     inc = {t: y for t, y in zip(keep["ticker"], keep["yahoo"]) if t in have}
 
-    b_full, _, f1 = yahoo.fetch(full, YAHOO_HISTORY) if full else (pd.DataFrame(), [], [])
-    b_inc, split_t, f2 = yahoo.fetch(inc, "1mo") if inc else (pd.DataFrame(), [], [])
+    fetch = cfg.get("fetch", yahoo.fetch)
+    b_full, _, f1 = fetch(full, YAHOO_HISTORY) if full else (pd.DataFrame(), [], [])
+    b_inc, split_t, f2 = fetch(inc, "1mo") if inc else (pd.DataFrame(), [], [])
     if inc and b_inc["ticker"].nunique() < 0.5 * len(inc):
         raise RuntimeError(f"Yahoo returned only {b_inc['ticker'].nunique()}/{len(inc)} tickers; keeping existing data")
     # A split inside the window means older stored bars are on the old scale -> refetch full history.
-    b_split, _, f3 = yahoo.fetch({t: inc[t] for t in split_t}, YAHOO_HISTORY) if split_t else (pd.DataFrame(), [], [])
+    b_split, _, f3 = fetch({t: inc[t] for t in split_t}, YAHOO_HISTORY) if split_t else (pd.DataFrame(), [], [])
 
     replaced = set(b_split["ticker"]) if len(b_split) else set()
     parts = [old[~old["ticker"].isin(replaced)]] if len(old) else []
@@ -176,7 +181,8 @@ def scan_hits(source: str, date) -> pd.DataFrame:
 
 REFRESHERS = {"indices": world.refresh, "macro": macro.refresh, "public_repo": refresh_public,
               "yahoo": lambda: refresh_universe("yahoo"), "kospi": lambda: refresh_universe("kospi"),
-              "kosdaq": lambda: refresh_universe("kosdaq"), "massive": refresh_massive}
+              "kosdaq": lambda: refresh_universe("kosdaq"), "crypto": lambda: refresh_universe("crypto"),
+              "massive": refresh_massive}
 # Sources that can carry today's in-progress session (provisional until the close is final).
 LIVE = {"indices": lambda: world.refresh(live=True), "yahoo": lambda: refresh_universe("yahoo", True),
         "kospi": lambda: refresh_universe("kospi", True), "kosdaq": lambda: refresh_universe("kosdaq", True)}
@@ -272,7 +278,7 @@ def auto_loop(stop: threading.Event) -> None:
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser(description="Refresh breadth data (used by Task Scheduler).")
-    ap.add_argument("--source", action="append", help="indices|macro|public_repo|yahoo|kospi|kosdaq|massive (default: all enabled)")
+    ap.add_argument("--source", action="append", help="indices|macro|public_repo|yahoo|kospi|kosdaq|crypto|massive (default: all enabled)")
     ap.add_argument("--only-stale", action="store_true")
     ap.add_argument("--live", action="store_true", help="include today's in-progress session for markets now open")
     a = ap.parse_args()

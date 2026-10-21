@@ -16,6 +16,10 @@ OPEN = {"NYSE": (9, 30), "XKRX": (9, 0)}  # local regular-session open
 # pandas_market_calendars builds holidays lazily and is not thread-safe on first use
 # (concurrent API requests on a cold server crashed with '_holidays' AttributeError).
 _lock = threading.Lock()
+# 24/7 markets: every UTC day is a session, final at 00:00 UTC (+10 min for the exchange's
+# daily bar). Deliberately not in CALENDARS: it is never "live", so the intraday loop
+# (which runs while any CALENDARS market is open) does not spin forever on it.
+CRYPTO = "CRYPTO"
 
 
 @functools.lru_cache(maxsize=None)
@@ -26,12 +30,16 @@ def _cal(name: str):
 
 
 def sessions(start: dt.date, end: dt.date, cal: str = "NYSE") -> list[dt.date]:
+    if cal == CRYPTO:
+        return [start + dt.timedelta(days=i) for i in range((end - start).days + 1)]
     with _lock:
         days = _cal(cal).valid_days(start, end)
     return [d.date() for d in days]
 
 
 def latest_complete_session(now: dt.datetime | None = None, cal: str = "NYSE") -> dt.date:
+    if cal == CRYPTO:
+        return ((now or dt.datetime.now(dt.timezone.utc)).astimezone(dt.timezone.utc) - dt.timedelta(minutes=10)).date() - dt.timedelta(days=1)
     tz, final_hour = CALENDARS[cal]
     now = (now or dt.datetime.now(dt.timezone.utc)).astimezone(tz)
     days = sessions(now.date() - dt.timedelta(days=14), now.date(), cal)
@@ -42,6 +50,8 @@ def latest_complete_session(now: dt.datetime | None = None, cal: str = "NYSE") -
 
 def live_session(now: dt.datetime | None = None, cal: str = "NYSE") -> dt.date | None:
     """Today's session while it is open or not yet final (open .. final hour), else None."""
+    if cal == CRYPTO:
+        return None
     tz, final_hour = CALENDARS[cal]
     now = (now or dt.datetime.now(dt.timezone.utc)).astimezone(tz)
     if sessions(now.date(), now.date(), cal) and OPEN[cal] <= (now.hour, now.minute) and now.hour < final_hour:

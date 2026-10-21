@@ -5,7 +5,7 @@ docs/indicator-definitions.md, "다른 시장 적용").
 """
 from dataclasses import asdict, dataclass
 
-from .collectors import korea, yahoo
+from .collectors import crypto, korea, yahoo
 
 
 @dataclass(frozen=True)
@@ -18,6 +18,8 @@ class Params:
     # unadjusted corporate action (e.g. Yahoo misses many KRX 액면병합/감자), so the
     # ticker's history before it is dropped from calculations.
     daily_limit: float | None = None
+    # 24/7 markets: a longer gap in a ticker's daily bars is a halt (often a redenomination).
+    max_gap_days: int | None = None
 
 
 # TC2000 v12.4 values from the original scans.
@@ -26,6 +28,9 @@ US = Params(5, 100_000, 250_000, "USD")
 # ₩1,400/$ would drop roughly half of KOSDAQ), share-volume line kept at 100,000,
 # $250k dollar volume -> ₩350M at ₩1,400/$.
 KR = Params(1_000, 100_000, 350_000_000, "KRW", daily_limit=0.30)
+# Crypto adaptation: no price floor or share-count line (a coin's unit is arbitrary: 1 BTC vs
+# 1 PEPE); liquidity only via 20-day turnover >= 1M USDT (4x the US $250k: 24/7 trading).
+CRYPTO = Params(0, 0, 1_000_000, "USDT", max_gap_days=2)
 
 UNIVERSES = {
     "yahoo": {"label": "미국 전체 보통주 (현재 상장 종목)", "short": "미국 전체 (현재 상장)", "cal": "NYSE", "params": US,
@@ -38,6 +43,10 @@ UNIVERSES = {
               "benchmark": "^KS11", "etf": "069500.KS", "load": lambda: korea.universe("kospi"), "bars": "bars_kospi"},
     "kosdaq": {"label": "코스닥 상장 보통주", "short": "코스닥", "cal": "XKRX", "params": KR,
                "benchmark": "^KQ11", "etf": "229200.KS", "load": lambda: korea.universe("kosdaq"), "bars": "bars_kosdaq"},
+    # Binance spot USDT pairs; delisted pairs keep their history (delisted_history).
+    "crypto": {"label": "크립토 (바이낸스 USDT 현물, 상장폐지 포함)", "short": "크립토", "cal": "CRYPTO", "params": CRYPTO,
+               "benchmark": "BTC-USD", "etf": "BTC-USD", "load": crypto.universe, "fetch": crypto.fetch,
+               "delisted_history": True, "bars": "bars_crypto"},
 }
 # Provider-based sources that are always US / NYSE.
 SOURCE_CAL = {"public_repo": "NYSE", "massive": "NYSE", **{k: v["cal"] for k, v in UNIVERSES.items()}}

@@ -74,22 +74,26 @@ MM_COLS = ["up4", "down4", "ratio5", "ratio10", "quarter_up25", "quarter_down25"
            "day34_up13", "day34_down13", "day34_diff", "t2108"]
 
 
-def cut_breaks(bars: pd.DataFrame, limit: float | None) -> pd.DataFrame:
+def cut_breaks(bars: pd.DataFrame, limit: float | None, max_gap: int | None = None) -> pd.DataFrame:
     """Split each ticker's history at moves beyond the daily price limit (+1pt
-    tolerance): the parts become separate series (ticker#1, ticker#2, ...) so no
-    window spans the break, while earlier history still counts on its own dates.
-    No-op when the market has no limit."""
-    if not limit or bars.empty:
+    tolerance) or, on 24/7 markets, at trading halts longer than max_gap days
+    (redenominations / relistings under the same symbol): the parts become separate
+    series (ticker#1, ticker#2, ...) so no window spans the break, while earlier
+    history still counts on its own dates. No-op when the market has neither."""
+    if not (limit or max_gap) or bars.empty:
         return bars
     b = bars.sort_values(["ticker", "date"])
-    brk = b.groupby("ticker")["close"].pct_change().abs() > limit + 0.01
+    g = b.groupby("ticker")
+    brk = (g["close"].pct_change().abs() > limit + 0.01) if limit else pd.Series(False, index=b.index)
+    if max_gap:
+        brk |= pd.to_datetime(b["date"]).groupby(b["ticker"]).diff().dt.days > max_gap
     seg = brk.groupby(b["ticker"]).cumsum()
     return b.assign(ticker=b["ticker"].where(seg == 0, b["ticker"] + "#" + seg.astype(str)))
 
 
 def compute(bars: pd.DataFrame, p: Params = US) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Return (breadth20, market_monitor_daily) frames, one row per session."""
-    bars = cut_breaks(bars, p.daily_limit)
+    bars = cut_breaks(bars, p.daily_limit, p.max_gap_days)
     daily = store.sql(f"""
         SELECT date,
           count(*) AS eligible_universe_count,
@@ -138,7 +142,7 @@ SCAN_SIGNALS = ["bull20", "bear20", "up4", "down4", "q_up25", "q_down25", "m_up2
 def scan(bars: pd.DataFrame, date, p: Params = US) -> pd.DataFrame:
     """All stocks meeting any scan condition on `date` (bars must include >=65
     sessions of history before it)."""
-    bars = cut_breaks(bars, p.daily_limit)
+    bars = cut_breaks(bars, p.daily_limit, p.max_gap_days)
     any_sig = " OR ".join(SCAN_SIGNALS)
     out = store.sql(f"""
         SELECT ticker, date, close, volume, c1, c5, c20, minv3, dv20,

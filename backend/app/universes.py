@@ -20,6 +20,9 @@ class Params:
     daily_limit: float | None = None
     # 24/7 markets: a longer gap in a ticker's daily bars is a halt (often a redenomination).
     max_gap_days: int | None = None
+    # Coins have no meaningful share count: when set, the 4% scans need day turnover (C*V) >= [0]
+    # and the 20% study a 3-preceding-day minimum turnover > [1], instead of the share-volume line.
+    min_turnover: tuple[float, float] | None = None
 
 
 # TC2000 v12.4 values from the original scans.
@@ -29,8 +32,10 @@ US = Params(5, 100_000, 250_000, "USD")
 # $250k dollar volume -> ₩350M at ₩1,400/$.
 KR = Params(1_000, 100_000, 350_000_000, "KRW", daily_limit=0.30)
 # Crypto adaptation: no price floor or share-count line (a coin's unit is arbitrary: 1 BTC vs
-# 1 PEPE); liquidity only via 20-day turnover >= 1M USDT (4x the US $250k: 24/7 trading).
-CRYPTO = Params(0, 0, 1_000_000, "USDT", max_gap_days=2)
+# 1 PEPE); 20-day turnover >= 1M USDT (4x the US $250k: 24/7 trading). The share-volume line
+# becomes a turnover line set so the same share of moves passes as in the US (2026-10, 60 sessions:
+# US 100k shares keeps 76% of 4% moves / 67% of 20% candidates; 500k / 300k USDT keep 79% / 64%).
+CRYPTO = Params(0, 0, 1_000_000, "USDT", max_gap_days=2, min_turnover=(500_000, 300_000))
 
 UNIVERSES = {
     "yahoo": {"label": "미국 전체 보통주 (현재 상장 종목)", "short": "미국 전체 (현재 상장)", "cal": "NYSE", "params": US,

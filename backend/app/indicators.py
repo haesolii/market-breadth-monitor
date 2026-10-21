@@ -25,6 +25,7 @@ SELECT ticker, date, close, volume,
   LAG(close, 5)  OVER (PARTITION BY ticker ORDER BY date) AS c5,
   LAG(close, 20) OVER (PARTITION BY ticker ORDER BY date) AS c20,
   MIN(volume)   {_w(3, '1 PRECEDING')} AS minv3,
+  MIN(close * volume) {_w(3, '1 PRECEDING')} AS mintv3,
   COUNT(volume) {_w(3, '1 PRECEDING')} AS nv3,
   AVG(close) {_w(19)} * AVG(volume) {_w(19)} AS dv20,
   COUNT(close) {_w(19)} AS n20,
@@ -39,11 +40,11 @@ FLAGS = """
 SELECT *,
   (n20 = 20 AND dv20 >= {dv}) AS liq,
   (c1 > 0 AND v1 IS NOT NULL) AS el_daily,
-  (c1 > 0 AND 100 * (close - c1) / c1 >= 4    AND volume >= {vol} AND volume > v1) AS up4,
-  (c1 > 0 AND 100 * (close - c1) / c1 <= (-4) AND volume >= {vol} AND volume > v1) AS down4,
+  (c1 > 0 AND 100 * (close - c1) / c1 >= 4    AND {v4} >= {vol} AND volume > v1) AS up4,
+  (c1 > 0 AND 100 * (close - c1) / c1 <= (-4) AND {v4} >= {vol} AND volume > v1) AS down4,
   (c5 > 0 AND nv3 = 3) AS el_20,
-  (c5 > 0 AND close >= c5 * 1.2 AND nv3 = 3 AND minv3 > {vol} AND close >= {px}) AS bull20,
-  (c5 > 0 AND close <  c5 * 0.8 AND nv3 = 3 AND minv3 > {vol} AND close >= {px}) AS bear20,
+  (c5 > 0 AND close >= c5 * 1.2 AND nv3 = 3 AND {v20} > {vol20} AND close >= {px}) AS bull20,
+  (c5 > 0 AND close <  c5 * 0.8 AND nv3 = 3 AND {v20} > {vol20} AND close >= {px}) AS bear20,
   (n65 = 65 AND n20 = 20 AND dv20 >= {dv}) AS el_q,
   (n65 = 65 AND n20 = 20 AND dv20 >= {dv} AND 100 * ((close + .01) - (minc65 + .01)) / (minc65 + .01) >= 25)   AS q_up25,
   (n65 = 65 AND n20 = 20 AND dv20 >= {dv} AND 100 * ((close + .01) - (maxc65 + .01)) / (maxc65 + .01) <= (-25)) AS q_down25,
@@ -62,7 +63,11 @@ FROM ({FEATURES}) f
 
 def flags_sql(p: Params = US) -> str:
     """Per-stock flags with the universe's thresholds substituted."""
-    return FLAGS.format(FEATURES=FEATURES, px=p.price_floor, vol=p.min_volume, dv=p.min_dollar_vol)
+    if p.min_turnover:
+        lines = dict(v4="close * volume", vol=p.min_turnover[0], v20="mintv3", vol20=p.min_turnover[1])
+    else:
+        lines = dict(v4="volume", vol=p.min_volume, v20="minv3", vol20=p.min_volume)
+    return FLAGS.format(FEATURES=FEATURES, px=p.price_floor, dv=p.min_dollar_vol, **lines)
 
 
 # Minimum dataset sessions before an indicator is meaningful (warm-up). Days

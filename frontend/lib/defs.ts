@@ -94,9 +94,9 @@ const CAL: Record<string, Record<string, Record<number, number>>> = {
   kosdaq: { up4: { 100: 60, 300: 120, 500: 185, 1000: 280 }, down4: { 300: 85, 500: 225, 1000: 535 },
     quarter_up25: { 200: 75, 500: 165 }, month_up25: { 200: 100 }, month_down25: { 200: 45 },
     month_up50: { 20: 12 }, month_down50: { 20: 1 }, bear: { 50: 20, 100: 55, 150: 105 } },
-  crypto: { up4: { 100: 15, 300: 65, 500: 165, 1000: 270 }, down4: { 300: 95, 500: 225, 1000: 325 },
+  crypto: { up4: { 100: 15, 300: 65, 500: 160, 1000: 245 }, down4: { 300: 85, 500: 210, 1000: 320 },
     quarter_up25: { 200: 5, 500: 25 }, month_up25: { 200: 40 }, month_down25: { 200: 45 },
-    month_up50: { 20: 3 }, month_down50: { 20: 1 }, bear: { 50: 40, 100: 180, 150: 250 } },
+    month_up50: { 20: 3 }, month_down50: { 20: 1 }, bear: { 50: 40, 100: 180, 150: 245 } },
 };
 /** A US count threshold of indicator `key` expressed for this row's market (rows carry `market`). */
 export const cnt = (base: number, x: Vals, key: string) =>

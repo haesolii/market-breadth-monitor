@@ -92,3 +92,15 @@ def test_live_volume_is_paced_to_a_full_day():
     assert abs(mc.session_elapsed(dt.datetime(2026, 10, 21, 16, 45, tzinfo=dt.timezone.utc)) - 0.5) < 1e-9
     assert mc.session_elapsed(dt.datetime(2026, 10, 21, 21, 0, tzinfo=dt.timezone.utc)) == 1.0
     assert mc.session_elapsed(dt.datetime(2026, 10, 24, 15, 0, tzinfo=dt.timezone.utc)) == 1.0  # Saturday
+
+
+def test_crypto_uses_turnover_not_unit_count():
+    import pandas as pd
+    from app import indicators, store
+    from app.universes import CRYPTO
+    # +5% day on 1M units: at 0.10 USDT (100k turnover) it is too thin, at 1.0 (1M) it counts.
+    def up4(px):
+        b = pd.DataFrame({"date": pd.to_datetime(["2026-01-01", "2026-01-02"]).date, "ticker": "X",
+                          "close": [px, px * 1.05], "volume": [5e5, 1e6]})
+        return bool(store.sql(f"SELECT up4 FROM ({indicators.flags_sql(CRYPTO)}) ORDER BY date", bars=b)["up4"].iloc[-1])
+    assert not up4(0.10) and up4(1.0)

@@ -5,6 +5,8 @@ import { Err, Panel, Select } from "@/components/bits";
 import { Input } from "@/components/ui/input";
 import { useApi, type Status } from "@/lib/api";
 import { downloadCSV } from "@/lib/csv";
+import { useSetting } from "@/lib/settings";
+import { IndicatorFlow } from "@/components/IndicatorFlow";
 import { ALL_DEFS, defOf, fmt } from "@/lib/defs";
 
 const ReactECharts = dynamic(() => import("echarts-for-react"), { ssr: false });
@@ -20,7 +22,7 @@ type Res = {
 const pct = (v: number | null | undefined, d = 2) => (v === null || v === undefined ? "—" : `${v > 0 ? "+" : ""}${v.toFixed(d)}%`);
 const tone = (v: number | null | undefined) => (v === null || v === undefined ? "text-zinc-600" : v > 0 ? "text-emerald-400" : v < 0 ? "text-red-400" : "");
 
-export default function Research() {
+function EventStudy() {
   const { data: st } = useApi<Status>("/api/status");
   const [metric, setMetric] = useState("bear");
   const [op, setOp] = useState(">=");
@@ -169,6 +171,20 @@ export default function Research() {
           </div>
         </>
       )}
+    </div>
+  );
+}
+
+export default function Research() {
+  const [tab, setTab] = useSetting("research.tab", "flow");
+  return (
+    <div className="space-y-3">
+      <div className="flex overflow-hidden rounded border border-zinc-700 text-xs w-fit">
+        {([["flow", "지표 흐름·상관관계"], ["events", "극단값 이후 성과 (이벤트)"]] as [string, string][]).map(([k, l]) => (
+          <button key={k} onClick={() => setTab(k)} className={`px-3 py-1 ${tab === k ? "bg-sky-700 text-white" : "text-zinc-300 hover:bg-zinc-800"}`}>{l}</button>
+        ))}
+      </div>
+      {tab === "flow" ? <IndicatorFlow /> : <EventStudy />}
     </div>
   );
 }

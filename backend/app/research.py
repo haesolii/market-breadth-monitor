@@ -93,3 +93,33 @@ def study(series: pd.DataFrame, spy: pd.DataFrame, threshold: float, op: str = "
         "events": events.replace({np.nan: None}).to_dict("records"),
         "stats": stats, "baseline": baseline, "excursion": {"sessions": EXC, **exc},
     }
+
+
+RET_COLS = {"p20": "과거 20일", "r0": "당일", "r5": "이후 5일", "r20": "이후 20일"}
+
+
+def indicator_study(ind: pd.DataFrame, prices: pd.DataFrame, cols: list[str], days: int | None = None) -> dict:
+    """Indicator levels vs the benchmark: per indicator the latest value, its change over the window
+    and its percentile within the window; Spearman rank correlations of each indicator with the
+    benchmark's trailing 20-day, same-day and forward 5 / 20-day returns, and between indicators.
+    Rank correlation: counts are skewed (quiet days near 0, panics in the hundreds)."""
+    fr = forward_returns(prices)
+    fr["r0"] = (fr["close"] / fr["close"].shift(1) - 1) * 100
+    fr["p20"] = (fr["close"] / fr["close"].shift(20) - 1) * 100
+    df = ind.merge(fr[["date", *RET_COLS]], on="date", how="left").sort_values("date")
+    if days:
+        df = df.tail(days)
+    cols = [c for c in cols if c in df and df[c].notna().sum() >= 10]
+    stats = []
+    for c in cols:
+        s = df[c].dropna()
+        last = float(s.iloc[-1])
+        stats.append({"key": c, "last": last, "first": float(s.iloc[0]), "min": float(s.min()), "max": float(s.max()),
+                      "mean": float(s.mean()), "pctile": float((s <= last).mean() * 100)})
+    m = df[cols + list(RET_COLS)].astype(float)
+    vs = m.corr(method="spearman", min_periods=20).loc[cols, list(RET_COLS)]
+    cc = m[cols].corr(method="spearman", min_periods=20)
+    mat = lambda x: [[None if pd.isna(v) else round(float(v), 2) for v in row] for row in x.to_numpy()]  # noqa: E731
+    return {"range": [str(df["date"].iloc[0]), str(df["date"].iloc[-1])] if len(df) else [], "n": len(df), "stats": stats,
+            "vs_returns": {"rows": cols, "cols": list(RET_COLS.values()), "matrix": mat(vs)},
+            "between": {"rows": cols, "matrix": mat(cc)}}

@@ -9,7 +9,7 @@ const MENU = [
   ["/", "1. 종합 시장 현황", "Market Overview"],
   ["/bullbear", "2. 20% 급등락 분석", "20% Bull/Bear Study"],
   ["/monitor", "3. 시장 모니터", "Market Monitor"],
-  ["/research", "4. 과거 시장 통계", "Historical Research"],
+  ["/research", "4. 지표 흐름·과거 통계", "Indicator Flow & Research"],
   ["/scanner", "5. 조건 충족 종목 검색", "Scanner Results"],
   ["/world", "6. 세계 지수", "World Indices"],
   ["/macro", "7. 매크로", "Macro"],

@@ -263,6 +263,18 @@ def compare(metric: str = "t2108"):
     return {"metric": metric, "series": out, "labels": {s: SOURCE_INFO[s].get("short", s) for s in out}}
 
 
+@app.get("/api/research/flow")
+def research_flow(source: str | None = None, days: int = Query(252, ge=0, le=5000), benchmark: str | None = None):
+    """Indicator levels vs the benchmark's returns (research screen only: uses forward returns)."""
+    source, mm = table_for("market_monitor_daily", source if source in available("market_monitor_daily") else None)
+    b20 = store.read("breadth20")
+    if len(b20):
+        mm = mm.merge(b20[b20["source"] == source][["date", "bull", "bear"]], on="date", how="left")
+    benchmark = benchmark or universes.benchmark_of(source)
+    res = research.indicator_study(mm, benchmark_prices(benchmark), ["bull", "bear", *MM_COLS], days or None)
+    return {"source": source, "benchmark": benchmark, **res}
+
+
 def benchmark_prices(symbol: str) -> pd.DataFrame:
     """(date, close) of a symbol in the world-index table."""
     df = store.read("indices")
@@ -409,6 +421,13 @@ def sector_map(market: str = "yahoo", period: str = "r1d", leaves: int = Query(8
     if period not in sectors.PERIODS or market not in (*sectors.MARKETS, "nasdaq"):
         raise HTTPException(400, "unknown market or period")
     return sectors.summary(market, period, leaves)
+
+
+@app.get("/api/sectors/history")
+def sector_history(market: str = "yahoo", days: int = Query(252, ge=5, le=400), sectors_: str = Query("", alias="sectors")):
+    if market not in (*sectors.MARKETS, "nasdaq"):
+        raise HTTPException(400, "unknown market")
+    return sectors.history(market, days, [x for x in sectors_.split("|") if x])
 
 
 # ---- active ETF holdings ------------------------------------------------------------

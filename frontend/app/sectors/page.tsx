@@ -1,7 +1,9 @@
 "use client";
 import dynamic from "next/dynamic";
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Err, Panel } from "@/components/bits";
+import { CorrHeatmap } from "@/components/CorrHeatmap";
+import { TimeChart } from "@/components/TimeChart";
 import { LIVE_MS, useApi } from "@/lib/api";
 import { useSetting } from "@/lib/settings";
 
@@ -12,7 +14,71 @@ type Sector = { sector: string; n: number; size: number; ret: number; median: nu
 type Res = { market: string; period: string; date?: string; n?: number; sectors: Sector[]; stocks: Stock[] };
 
 const MARKETS: [string, string][] = [["yahoo", "미국"], ["nasdaq", "나스닥"], ["kospi", "코스피"], ["kosdaq", "코스닥"], ["crypto", "크립토"]];
-const PERIODS: [string, string, number][] = [["r1d", "1일", 3], ["r1w", "1주", 6], ["r1m", "1개월", 12], ["r3m", "3개월", 25], ["ytd", "연초 대비", 40]];
+const PERIODS: [string, string, number][] = [["r1d", "1일", 3], ["r1w", "1주", 6], ["r1m", "1개월", 12], ["r3m", "3개월", 25], ["r1y", "1년", 60], ["ytd", "연초 대비", 40]];
+const WINDOWS: [string, string][] = [["21", "1개월"], ["63", "3개월"], ["126", "6개월"], ["252", "1년"]];
+// Fixed categorical order (never cycled): the whole market first, then up to 7 sectors.
+const LINE = ["#e4e4e7", "#38bdf8", "#f59e0b", "#a78bfa", "#10b981", "#f472b6", "#fb923c", "#2dd4bf"];
+const MAX_LINES = LINE.length;
+type Hist = { days: number; dates: string[]; picked: string[]; series: Record<string, number[]>;
+  stats: { sector: string; n: number | null; ret: number; vol: number; corr: number | null; beta: number | null }[];
+  corr: { sectors: string[]; matrix: (number | null)[][] } };
+
+/** Sector indexes (=100) on one axis, their correlation matrix, and return / volatility / beta per sector. */
+function SectorTrend({ market, picked, setPicked }: { market: string; picked: string[]; setPicked: (p: string[]) => void }) {
+  const [win, setWin] = useSetting("sectors.window", "252");
+  const q = picked.length ? `&sectors=${encodeURIComponent(picked.join("|"))}` : "";
+  const { data, error } = useApi<Hist>(`/api/sectors/history?market=${market}&days=${win}${q}`);
+  const series = useMemo(() => (data ? data.picked.map((k, i) => ({ name: k, data: data.series[k], color: LINE[i % LINE.length], type: "line" as const })) : []), [data]);
+  const toggle = (sec: string) => {
+    const cur = data?.picked ?? [];
+    setPicked(cur.includes(sec) ? cur.filter((x) => x !== sec) : [...cur, sec].slice(-MAX_LINES));
+  };
+  if (!data?.dates.length) return error ? <Err error={error} /> : null;
+  return (
+    <>
+      <Panel title={`섹터 지수 추이 (시작 = 100, 최근 ${data.days}거래일)`} right={<>
+        <Tabs value={win} onChange={setWin} options={WINDOWS} />
+        <button className="text-xs text-zinc-400" onClick={() => setPicked([])}>기본 선택</button>
+      </>}>
+        <TimeChart dates={data.dates} series={series} rebased height={420} />
+        <div className="mt-1 text-[11px] text-zinc-500">
+          섹터 지수 = 현재 시가총액 가중 일간 수익률을 이어 붙인 값 (현재 구성 종목 기준, 상장폐지 종목 없음). 아래 표에서 섹터를 눌러 선 추가/제거 (최대 {MAX_LINES}개).
+        </div>
+      </Panel>
+      <div className="grid gap-3 xl:grid-cols-2">
+        <Panel title="섹터별 수익률·변동성·시장 민감도">
+          <div className="max-h-[480px] overflow-auto">
+            <table className="w-full font-mono text-xs">
+              <thead className="sticky top-0 bg-zinc-900 text-zinc-400"><tr>
+                <th className="text-left">섹터</th><th>기간 수익률</th><th title="일간 수익률 표준편차 × √연간 거래일">연 변동성</th>
+                <th title="시장 전체와의 일간 수익률 상관계수">시장 상관</th><th title="시장이 1% 움직일 때 섹터가 움직인 평균 폭">베타</th>
+              </tr></thead>
+              <tbody>
+                {data.stats.map((s) => {
+                  const i = data.picked.indexOf(s.sector);
+                  return (
+                    <tr key={s.sector} onClick={() => toggle(s.sector)} className={`cursor-pointer border-t border-zinc-900 text-center hover:bg-zinc-900 ${i >= 0 ? "bg-zinc-900" : ""}`}>
+                      <td className="text-left font-sans">
+                        <span className="mr-1.5 inline-block h-2 w-2 rounded-full align-middle" style={{ background: i >= 0 ? LINE[i % LINE.length] : "transparent", border: "1px solid #52525b" }} />
+                        {s.sector}{s.n ? <span className="ml-1 text-zinc-500">{s.n}</span> : null}
+                      </td>
+                      <td className={tone(s.ret)}>{pct(s.ret, 1)}</td><td>{s.vol.toFixed(1)}%</td>
+                      <td>{s.corr === null ? "—" : s.corr.toFixed(2)}</td><td>{s.beta === null ? "—" : s.beta.toFixed(2)}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </Panel>
+        <Panel title="선택 섹터 간 일간 수익률 상관계수">
+          <CorrHeatmap rows={data.corr.sectors} matrix={data.corr.matrix} height={440} left={130} />
+          <div className="text-[11px] text-zinc-500">1에 가까울수록 같이 움직임, 0 근처면 무관, 음수면 반대로 움직임. 분산 효과를 볼 때 상관이 낮은 섹터 조합을 찾는 데 씁니다.</div>
+        </Panel>
+      </div>
+    </>
+  );
+}
 // Diverging: red (down) - neutral gray - green (up), the app's up/down convention.
 const DIV = ["#b91c1c", "#ef4444", "#3f3f46", "#22c55e", "#15803d"];
 const pct = (v: number | null | undefined, d = 1) => (v === null || v === undefined ? "—" : `${v > 0 ? "+" : ""}${v.toFixed(d)}%`);
@@ -34,6 +100,8 @@ function Tabs({ value, onChange, options }: { value: string; onChange: (v: strin
 
 export default function Sectors() {
   const [market, setMarket] = useSetting("sectors.market", "yahoo");
+  const [picked, setPicked] = useState<string[]>([]);
+  useEffect(() => setPicked([]), [market]);
   const [period, setPeriod] = useSetting("sectors.period", "r1d");
   const { data, error, loading } = useApi<Res>(`/api/sectors?market=${market}&period=${period}`, LIVE_MS);
   const span = PERIODS.find((p) => p[0] === period)?.[2] ?? 5;
@@ -108,6 +176,8 @@ export default function Sectors() {
           </div>
         </Panel>
       )}
+
+      <SectorTrend market={market} picked={picked} setPicked={setPicked} />
     </div>
   );
 }

@@ -47,3 +47,16 @@ def test_and_condition_and_excursions():
     ev = res["events"][0]                                   # rising index: worst close is the next day
     assert round(ev["mae20"], 6) == round((107 / 106 - 1) * 100, 6) and round(ev["mfe20"], 6) == round((126 / 106 - 1) * 100, 6)
     assert research.study(series, s, 100, ">=")["n_events"] == 3   # no value2 threshold -> single condition
+
+
+def test_indicator_study_rank_correlations():
+    s = spy(80)
+    s["close"] = [100.0 + (i % 7) * 2 + i * 0.1 for i in range(80)]
+    ind = pd.DataFrame({"date": s["date"], "a": [float(i % 7) for i in range(80)], "b": [float(-(i % 7)) for i in range(80)],
+                        "empty": [None] * 80})
+    res = research.indicator_study(ind, s, ["a", "b", "empty"], days=60)
+    assert res["n"] == 60 and [x["key"] for x in res["stats"]] == ["a", "b"]      # all-empty indicator dropped
+    assert res["between"]["matrix"][0][1] == -1.0                                  # b mirrors a
+    assert res["vs_returns"]["cols"] == ["과거 20일", "당일", "이후 5일", "이후 20일"]
+    a = res["stats"][0]
+    assert a["last"] == 79 % 7 and 0 < a["pctile"] <= 100

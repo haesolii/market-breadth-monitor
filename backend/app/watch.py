@@ -17,7 +17,9 @@ from .config import DATA
 FILE = DATA / "watchlist.json"
 KR = ("kospi", "kosdaq")
 MOVE = 5.0            # % one-day move worth an event
-FLOW_PCT = 0.05       # foreign or institutional one-day net buying, % of market value
+FLOW_X = 3.0          # a flow event: one day's net buying / selling >= FLOW_X x the stock's own 60-day mean |net|
+FLOW_MIN_PCT = 0.01   # ...and at least this % of market value (thin names move a lot in relative terms)
+MAX_ALERTS = 30       # Telegram lines per message; scheduled / filing events first
 LOOKBACK = 7          # days of past events shown / alerted
 AHEAD = 14            # days of scheduled earnings / IR shown
 
@@ -50,6 +52,7 @@ def events(items: list[dict], today: dt.date | None = None) -> list[dict]:
     sm = store.read("sector_map")
     rep, ch, fl = store.read("analyst_reports"), store.read("etf_changes"), store.read("etf_funds")
     flow, dart_, earn, ir = store.read("kr_flow"), store.read("dart_prelim"), store.read("earnings"), store.read("kr_ir")
+    dev = store.read("dart_events")
     fund = dict(zip(fl["etf"], fl["name"])) if len(fl) else {}
     out = []
 
@@ -71,16 +74,17 @@ def events(items: list[dict], today: dt.date | None = None) -> list[dict]:
             for r in _recent(ch[ch["name" if kr else "ticker"] == (name if kr else t)], since).itertuples():
                 add(it, r.date, "ETF", f"{fund.get(r.etf, r.etf)} {r.kind}", f"{r.etf}:{r.date}")
         if kr and len(flow) and len(me):
-            f = _recent(flow[flow["ticker"] == t], since)
-            for r in f.itertuples():
-                for who, label in (("foreign", "외국인"), ("inst", "기관")):
-                    v = getattr(r, who)
-                    if abs(v) / me["size"].iloc[0] * 100 >= FLOW_PCT:
-                        add(it, r.date, "수급", f"{label} {'순매수' if v > 0 else '순매도'} {v / 1e8:+,.0f}억 (시총의 {v / me['size'].iloc[0] * 100:+.2f}%)", f"{who}:{r.date}")
+            for d, who, v, x in big_flows(flow[flow["ticker"] == t], float(me["size"].iloc[0]), since):
+                label = "외국인" if who == "foreign" else "기관"
+                add(it, d, "수급", f"{label} {'순매수' if v > 0 else '순매도'} {v / 1e8:+,.0f}억 (평소의 {x:.1f}배, 시총의 {v / me['size'].iloc[0] * 100:+.2f}%)", f"{who}:{d}")
         if kr and len(dart_):
             for r in _recent(dart_[dart_["code"] == t], since).itertuples():
                 react = "" if pd.isna(r.react) else f" · 반응 {r.react:+.1f}%"
                 add(it, r.date, "잠정실적", f"{r.title}{react}", r.rcept_no)
+        if kr and len(dev):
+            for r in _recent(dev[dev["code"] == t], since).itertuples():
+                react = "" if pd.isna(r.react) else f" · 반응 {r.react:+.1f}%"
+                add(it, r.date, "공시", f"[{r.category}] {r.title}{react}", r.rcept_no)
         if kr and len(ir):
             for r in ir[(ir["code"] == t) & (pd.to_datetime(ir["ir_date"]).dt.date >= since)].itertuples():
                 if _d(r.ir_date) <= until:
@@ -94,6 +98,20 @@ def events(items: list[dict], today: dt.date | None = None) -> list[dict]:
                         if done and pd.notna(r.eps_forecast) else f"실적 발표 예정 ({ {'pre': '장전', 'after': '장후'}.get(r.time, '시각 미정') })")
                 add(it, r.date, "실적", text, f"{r.date}:{done}")
     return sorted(out, key=lambda e: e["date"], reverse=True)
+
+
+def big_flows(f: pd.DataFrame, size: float, since: dt.date) -> list[tuple]:
+    """(date, investor, net value, multiple of normal) for days since `since` whose foreign or institutional
+    net value is >= FLOW_X x the mean |net| of the 60 sessions before it and >= FLOW_MIN_PCT of market value."""
+    f = f.sort_values("date")
+    out = []
+    for who in ("foreign", "inst"):
+        a = f[who].abs()
+        normal = a.shift(1).rolling(60, min_periods=20).mean()
+        x = a / normal
+        hit = (x >= FLOW_X) & (a / size * 100 >= FLOW_MIN_PCT) & (pd.to_datetime(f["date"]).dt.date >= since)
+        out += [(d, who, float(v), float(m)) for d, v, m in zip(f["date"][hit], f[who][hit], x[hit])]
+    return out
 
 
 def overview() -> dict:
@@ -115,10 +133,9 @@ def alerts() -> list[str]:
     sent = set(st.get("sent") or [])
     today = dt.date.today()
     lines, new = [], []
-    for e in events(load(), today):
-        due = not e["upcoming"] or _d(e["date"]) <= today + dt.timedelta(days=1)
-        if e["key"] in sent or not due:
-            continue
+    due = [e for e in events(load(), today) if e["key"] not in sent and (not e["upcoming"] or _d(e["date"]) <= today + dt.timedelta(days=1))]
+    rank = {"실적": 0, "IR": 0, "잠정실적": 1, "공시": 1, "리포트": 2, "ETF": 3, "급등락": 4, "수급": 5}
+    for e in sorted(due, key=lambda e: rank.get(e["kind"], 9))[:MAX_ALERTS]:  # the rest wait for the next message
         new.append(e["key"])
         lines.append(f"• <b>{html.escape(e['name'])}</b> [{e['kind']}] {e['date']}: {html.escape(e['text'])}")
     if new:

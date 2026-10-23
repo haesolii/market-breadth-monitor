@@ -13,7 +13,7 @@ from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-from . import analyst, brief, calendar_, dart, earnings, etf, flows, leaders, term, watch, indicators, macro, refresh, remote, research, sectors, stock, store, universes, usage, validation, world
+from . import analyst, brief, calendar_, dart, earnings, etf, flows, kr_funds, leaders, term, watch, indicators, macro, refresh, remote, research, sectors, stock, store, universes, usage, validation, world
 from .config import MASSIVE_API_KEY, REFRESH_INTERVAL_MIN, YAHOO_SCANNER
 from .indicators import MM_COLS
 from .market_calendar import CALENDARS, latest_complete_session
@@ -136,7 +136,7 @@ def status():
            "expected_sessions": {c: str(latest_complete_session(cal=c)) for c in ("NYSE", "XKRX")},
            "final_hours": {c: h for c, (_, h) in CALENDARS.items()}, "refresh_min": REFRESH_INTERVAL_MIN}
     enabled = refresh.enabled_sources()
-    for s in ["indices", "macro", "public_repo", "yahoo", "nasdaq", "kospi", "kosdaq", "crypto", "massive", "sectors", "etf", "analyst", "earnings", "flows", "dart", "leaders", "calendar", "term"]:
+    for s in ["indices", "macro", "public_repo", "yahoo", "nasdaq", "kospi", "kosdaq", "crypto", "massive", "sectors", "etf", "analyst", "earnings", "flows", "dart", "leaders", "calendar", "term", "kr_funds"]:
         ld = refresh.latest_date(s)
         derived = universes.UNIVERSES.get(s, {}).get("derived_from")
         out["sources"][s] = {**st["sources"].get(s, {}), "latest_date": str(ld) if ld else None,
@@ -520,6 +520,16 @@ def watchlist_save(items: list[WatchIn]):
         raise HTTPException(400, "관심종목은 200개까지")
     watch.save(out)
     return {"ok": True, "items": out}
+
+
+@app.get("/api/kr/funds")
+def kr_funds_view(days: int = Query(756, ge=20, le=2000)):
+    return kr_funds.view(days)
+
+
+@app.get("/api/dart/events")
+def dart_events(days: int = Query(14, ge=1, le=180), category: str = ""):
+    return {"categories": [c for c, _ in dart.EVENTS], "rows": dart.events(days, category)}
 
 
 @app.get("/api/stock/search")

@@ -234,12 +234,45 @@ function DartPrelim() {
   );
 }
 
+type Ev = Dart & { category: string };
+
+function DartEvents() {
+  const [days, setDays] = useSetting("reports.events.days", "7");
+  const [cat, setCat] = useState("");
+  const { data, error } = useApi<{ categories: string[]; rows: Ev[] }>(`/api/dart/events?days=${days}&category=${encodeURIComponent(cat)}`);
+  return (
+    <Panel title={`주요 공시 (한국, DART) ${data?.rows.length ?? 0}건`} right={<>
+      <Select value={cat} onChange={setCat} options={[["", "전체 유형"], ...(data?.categories ?? []).map((c) => [c, c] as [string, string])]} />
+      <Select value={days} onChange={setDays} options={[["3", "3일"], ["7", "7일"], ["30", "30일"]]} />
+    </>}>
+      <Err error={error} />
+      <div className="max-h-[680px] overflow-auto">
+        <table className="w-full font-mono text-xs">
+          <thead className="sticky top-0 bg-zinc-900 text-zinc-400"><tr><th className="text-left">공시일</th><th className="text-left">종목</th><th className="text-left">유형</th><th className="text-left">공시</th>
+            <th title="공시일 전 거래일 종가 → 공시일 다음 거래일 종가">반응</th><th title="공시 전 종가 → 최근 종가">이후</th></tr></thead>
+          <tbody>{(data?.rows ?? []).map((r) => (
+            <tr key={r.rcept_no} className="border-t border-zinc-900 text-center hover:bg-zinc-900">
+              <td className="text-left">{r.date}</td>
+              <td className="max-w-40 truncate text-left font-sans"><Link className="text-sky-300 hover:underline" href={stockHref(r.code, r.market)}>{r.name}</Link></td>
+              <td className="whitespace-nowrap text-left font-sans text-zinc-300">{r.category}</td>
+              <td className="text-left font-sans"><a className="hover:underline" href={r.url} target="_blank" rel="noreferrer">{r.title}</a></td>
+              <td className={tone(r.react)}>{pct(r.react)}</td><td className={tone(r.ret_since)}>{pct(r.ret_since)}</td>
+            </tr>
+          ))}</tbody>
+        </table>
+        {data && !data.rows.length && <div className="py-6 text-center text-xs text-zinc-500">해당 기간 공시 없음 (DART 키가 없으면 수집되지 않음)</div>}
+      </div>
+      <div className="mt-1 text-[11px] text-zinc-500">유상증자·무상증자·자사주(매입·처분·소각)·최대주주 변경·공급계약(수주)·CB/BW·합병·분할·감자·공개매수·소송·거래정지 공시를 모았습니다. 반응은 공시 시각을 몰라 2거래일 기준.</div>
+    </Panel>
+  );
+}
+
 export default function Reports() {
   const [tab, setTab] = useSetting("reports.tab", "analyst");
   return (
     <div className="space-y-3">
-      <Tabs value={tab} onChange={setTab} options={[["analyst", "증권사 리포트 (한국)"], ["dart", "잠정실적 (한국)"], ["earnings", "실적 발표 (미국)"]]} />
-      {tab === "analyst" ? <Analyst /> : tab === "dart" ? <DartPrelim /> : <Earnings />}
+      <Tabs value={tab} onChange={setTab} options={[["analyst", "증권사 리포트 (한국)"], ["dart", "잠정실적 (한국)"], ["events", "주요 공시 (한국)"], ["earnings", "실적 발표 (미국)"]]} />
+      {tab === "analyst" ? <Analyst /> : tab === "dart" ? <DartPrelim /> : tab === "events" ? <DartEvents /> : <Earnings />}
     </div>
   );
 }

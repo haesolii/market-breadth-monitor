@@ -14,7 +14,7 @@ import os
 
 import pandas as pd
 
-from . import analyst, dart, earnings, etf, flows, macro, research, sectors, store, world
+from . import analyst, dart, earnings, etf, flows, kr_funds, macro, research, sectors, store, world
 
 MODEL = "claude-opus-5-5"
 KST = dt.timezone(dt.timedelta(hours=9))
@@ -27,7 +27,7 @@ SYSTEM = """당신은 개인 투자 연구용 대시보드의 시장 요약을 �
 - 시장 폭(breadth) 지표의 극단값(Bear 급증, 10일 비율 0.5 이하/2 이상, T2108 20 미만/80 초과)은 반드시 언급합니다.
 - health_score는 시장 폭 지표 6개 묶음의 1년 백분위 평균(0~100, 50 = 보통, 70↑ 폭넓은 강세, 30↓ 폭넓은 약세)이며 시장과 함께 움직이는 동행 지표입니다. 예측처럼 쓰지 않습니다.
 - 섹터 rotation의 quadrant는 시장 대비 상대강도(주도·약화·부진·개선)이고, above40_pct는 섹터 안 40일선 위 종목 비율입니다.
-- 한국 수급(kr_flows)은 억원 단위 순매수입니다. market_today는 시장 전체, 나머지는 코스피·코스닥 전 종목 합계입니다.
+- 한국 수급(kr_flows)은 억원 단위 순매수입니다. market_today는 시장 전체, 나머지는 코스피·코스닥 전 종목 합계입니다. kr_market_funds는 투자자예탁금·신용융자 잔고(억원)와 반대매매 비중, kr_major_disclosures는 유상증자·자사주·수주 같은 주요 공시와 2거래일 주가 반응입니다.
 - 형식: 마크다운. "## 한눈에" (3줄 이내) 다음 "## 시장 폭", "## 매크로 발표와 시장 반응", "## 섹터", "## 한국 수급", "## 리포트·실적·ETF", "## 체크포인트" 순서.
   해당 데이터가 비어 있는 절은 생략합니다. 전체 600단어 이내, 각 절은 짧은 글머리표."""
 
@@ -95,10 +95,23 @@ def context() -> dict:
         "us_earnings_next_5d": _recs(pd.DataFrame(e["upcoming"]), ["date", "symbol", "name", "time"], 15),
         "sector_rotation": {MARKETS[m]: sectors.rotation(m) for m in ("yahoo", "kospi", "kosdaq")},
         "kr_flows": _flows(),
+        "kr_market_funds_억원": _funds(),
+        "kr_major_disclosures_3d": [{k: r.get(k) for k in ("date", "name", "category", "title", "react")}
+                                    for r in sorted(dart.events(3), key=lambda r: -abs(r.get("react") or 0))[:12]],
         "kr_prelim_earnings_3d": [{k: r.get(k) for k in ("date", "name", "title", "react", "correction")}
                                   for r in sorted(dart.view(3), key=lambda r: -abs(r.get("react") or 0))[:10]],
         "active_etf_consensus_3d": [{"name": c["name"], "buy_funds": len(c["buy"]), "sell_funds": len(c["sell"])} for c in ef["consensus"][:10]],
     }
+
+
+def _funds() -> dict:
+    v = kr_funds.view(30)
+    if not v["rows"]:
+        return {}
+    last = v["rows"][-1]
+    return {"date": last["date"], "investor_deposit": last["deposit"], "margin_loans": last["margin"], "margin_kospi": last["margin_kospi"],
+            "margin_kosdaq": last["margin_kosdaq"], "forced_liquidation_pct": last["forced_pct"], "change_5d_20d": v["change"],
+            "margin_to_market_cap_pct": v["margin_to_cap"]}
 
 
 def _flows() -> dict:

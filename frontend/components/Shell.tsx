@@ -1,6 +1,6 @@
 "use client";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { send, useApi, type Status } from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -94,6 +94,7 @@ export function StatusBar() {
 
 export function Shell({ children }: { children: React.ReactNode }) {
   const path = usePathname();
+  const router = useRouter();
   if (path === "/login") return <>{children}</>;
   return (
     <div className="flex min-h-screen flex-col md:flex-row">
@@ -102,7 +103,15 @@ export function Shell({ children }: { children: React.ReactNode }) {
           <div className="font-mono text-sm font-bold text-emerald-400">MARKET BREADTH</div>
           <div className="text-[10px] text-zinc-500">시장 폭 (Market Breadth) 연구용 · 투자 권유 아님</div>
         </div>
-        <ul className="flex gap-1 overflow-x-auto px-2 pb-2 md:flex-col">
+        {/* phones: one native menu instead of a 17-item scroll strip */}
+        <div className="px-3 pb-2 md:hidden">
+          <select value={MENU.some(([h]) => h === path) ? path : ""} onChange={(e) => router.push(e.target.value)} aria-label="메뉴"
+            className="w-full rounded border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-100">
+            {!MENU.some(([h]) => h === path) && <option value="">메뉴 선택</option>}
+            {MENU.map(([href, ko]) => <option key={href} value={href}>{ko}</option>)}
+          </select>
+        </div>
+        <ul className="hidden gap-1 px-2 pb-2 md:flex md:flex-col">
           {MENU.map(([href, ko, en]) => (
             <li key={href}>
               <Link

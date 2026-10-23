@@ -38,6 +38,43 @@ function Top({ title, rows, who }: { title: string; rows: StockRow[]; who: "fore
   );
 }
 
+type FundRow = { date: string; deposit: number; margin: number; margin_kospi: number; margin_kosdaq: number; forced: number; forced_pct: number; unsettled: number };
+type Funds = { rows: FundRow[]; change?: Record<string, Record<string, number | null>>; margin_to_cap?: Record<string, number | null> };
+const jo = (v: number | null | undefined) => (v === null || v === undefined ? "—" : `${(v / 10000).toLocaleString("ko-KR", { maximumFractionDigits: 1 })}조`);
+const djo = (v: number | null | undefined) => (v === null || v === undefined ? "—" : `${v > 0 ? "+" : ""}${(v / 10000).toLocaleString("ko-KR", { maximumFractionDigits: 1 })}조`);
+
+/** Retail leverage and dry powder: investor deposits, margin loans by market, forced liquidations (KOFIA). */
+function MarketFunds() {
+  const { data, error } = useApi<Funds>("/api/kr/funds?days=756");
+  const bench = useBench("^KS11");
+  if (error) return <Err error={error} />;
+  if (!data?.rows.length) return null;
+  const r = data.rows, last = r.at(-1)!, dates = r.map((x) => x.date), c = data.change ?? {};
+  return (
+    <Panel title={`증시 자금: 예탁금·신용융자·반대매매 (금융투자협회, ${last.date})`}>
+      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
+        <Kpi label="투자자예탁금" value={jo(last.deposit)} sub={`5일 ${djo(c.deposit?.["5"])} · 20일 ${djo(c.deposit?.["20"])}`} />
+        <Kpi label="신용융자 잔고 (전체)" value={jo(last.margin)} sub={`5일 ${djo(c.margin?.["5"])} · 20일 ${djo(c.margin?.["20"])}`} />
+        <Kpi label="신용융자 코스피" value={jo(last.margin_kospi)} sub={`시가총액의 ${data.margin_to_cap?.kospi?.toFixed(2) ?? "—"}% · 20일 ${djo(c.margin_kospi?.["20"])}`} />
+        <Kpi label="신용융자 코스닥" value={jo(last.margin_kosdaq)} sub={`시가총액의 ${data.margin_to_cap?.kosdaq?.toFixed(2) ?? "—"}% · 20일 ${djo(c.margin_kosdaq?.["20"])}`} />
+        <Kpi label="반대매매 (미수금 대비)" value={`${last.forced_pct.toFixed(1)}%`} tone={last.forced_pct >= 5 ? "down" : "flat"} sub={`${eok(last.forced)} (미수금 ${jo(last.unsettled)})`} />
+      </div>
+      <div className="mt-3 grid gap-3 xl:grid-cols-2">
+        <TimeChart dates={dates} series={[
+          { name: "투자자예탁금 (조)", color: "#38bdf8", type: "line", data: r.map((x) => x.deposit / 10000) },
+          { name: "신용융자 (조)", color: "#f59e0b", type: "line", data: r.map((x) => x.margin / 10000) },
+        ]} spy={bench.map ? dates.map((d) => bench.map!.get(d) ?? null) : undefined} lowerName="코스피" height={380} yName="조원" />
+        <TimeChart dates={dates} series={[{ name: "반대매매 비중 (%)", color: "#ef4444", type: "bar", data: r.map((x) => x.forced_pct) }]}
+          spy={r.map((x) => x.margin_kosdaq / 10000)} lowerName="코스닥 신용융자 (조)" lowerColor="#f59e0b" height={380} yName="%" />
+      </div>
+      <div className="mt-1 text-[11px] text-zinc-500">
+        예탁금 = 주식을 사려고 증권사에 넣어 둔 돈(대기 매수 자금). 신용융자 = 빚내서 산 주식 잔고. 신용융자가 늘며 지수가 오르면 레버리지 과열, 지수 급락 때 반대매매 비중이 치솟으면
+        강제 청산(투매)이 나오는 구간입니다. 공매도 통계는 한국거래소 데이터 포털이 로그인을 요구하게 바뀌어 넣지 못했습니다.
+      </div>
+    </Panel>
+  );
+}
+
 export default function Flows() {
   const [win, setWin] = useState(60);
   const { data, error } = useApi<Res>("/api/flows?days=120");
@@ -90,6 +127,8 @@ export default function Flows() {
           <div className="text-[11px] text-zinc-500">외국인 20일 순매수 순으로 정렬. 외국인과 기관이 같은 방향이면 수급이 강한 업종입니다.</div>
         </Panel>
       )}
+
+      <MarketFunds />
 
       {data?.stocks.foreign_nlargest && (
         <div className="grid gap-3 lg:grid-cols-2">

@@ -17,7 +17,7 @@ import re
 import pandas as pd
 import requests
 
-from . import flows, remote, research, store, watch
+from . import flows, monitor, remote, research, store, watch
 from .market_calendar import latest_complete_session
 
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
@@ -215,7 +215,10 @@ def signals() -> str | None:
     out = ["🔔 <b>시장 폭 신호</b> (기본 강조 기준, 매매 신호 아님)", *lines] if lines else []
     wl = watch.alerts()
     if wl:
-        out += ([""] if out else []) + ["⭐ <b>관심종목</b>", *wl[:40]]
+        out += ([""] if out else []) + ["⭐ <b>관심종목</b>", *wl]
+    health = monitor.changes()
+    if health:
+        out += ([""] if out else []) + ["🩺 <b>데이터 상태</b>", *health]
     return "\n".join(out) if out else None
 
 

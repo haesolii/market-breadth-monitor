@@ -15,7 +15,7 @@ export function StockSearch({ onPick, placeholder = "종목명 또는 티커 (�
   const router = useRouter();
   const pick = (h: Hit) => { setQ(""); if (onPick) onPick(h); else router.push(stockHref(h.ticker, h.market)); };
   return (
-    <div className="relative w-full max-w-md">
+    <div className="relative w-full min-w-0 max-w-md sm:w-80">
       <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={placeholder}
         onKeyDown={(e) => { if (e.key === "Enter" && data?.[0]) pick(data[0]); }}
         className="w-full rounded border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-sm text-zinc-100 placeholder:text-zinc-500" />

@@ -73,7 +73,7 @@ def _chart(s, symbol: str, range_: str):
     q = res["indicators"]["quote"][0]
     df = pd.DataFrame({
         "date": [dt.datetime.fromtimestamp(t + off, dt.timezone.utc).date() for t in res["timestamp"]],
-        "close": q.get("close"), "volume": q.get("volume")})
+        "open": q.get("open"), "high": q.get("high"), "low": q.get("low"), "close": q.get("close"), "volume": q.get("volume")})
     df = df.dropna(subset=["close"])
     df["volume"] = df["volume"].fillna(0)
     splits = list((res.get("events") or {}).get("splits", {}).values())

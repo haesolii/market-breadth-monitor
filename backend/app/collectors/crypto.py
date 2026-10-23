@@ -59,6 +59,7 @@ def _klines(s, symbol: str, start_ms: int) -> pd.DataFrame:
             break
         start_ms = page[-1][0] + 1
     return pd.DataFrame({"date": [dt.datetime.fromtimestamp(k[0] / 1000, dt.timezone.utc).date() for k in rows],
+                         "open": [float(k[1]) for k in rows], "high": [float(k[2]) for k in rows], "low": [float(k[3]) for k in rows],
                          "close": [float(k[4]) for k in rows], "volume": [float(k[5]) for k in rows]})
 
 

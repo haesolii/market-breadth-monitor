@@ -9,10 +9,11 @@ import { stockHref } from "@/lib/stock";
 
 type B = { date: string; n: number; above10: number; above20: number; above50: number | null; new_high: number; new_low: number;
   leaders: number | null; leaders_above10: number | null; leaders_above20: number | null; leaders_r21: number | null };
-type L = { ticker: string; name: string | null; sector: string | null; close: number; r21: number | null; r63: number | null; r126: number | null;
-  adr: number; dvol: number; off_high: number; above10: boolean; above20: boolean; above50: boolean };
+type L = { ticker: string; name: string | null; sector: string | null; close: number; r1: number | null; r21: number | null; r63: number | null; r126: number | null;
+  adr: number; adr_true: boolean | null; dvol: number; off_high: number; above10: boolean; above20: boolean; above50: boolean;
+  breakout: boolean | null; gap: number | null; vratio: number | null };
 type T = { close: number; ma10: number; ma20: number; ma10_rising: boolean; state: string; dist10: number; dist20: number };
-type Res = { market: string; index: string; trend: T | null; index_closes: [string, number][]; breadth: B[]; leaders: L[]; leader_pct: number };
+type Res = { market: string; index: string; trend: T | null; index_closes: [string, number][]; breadth: B[]; leaders: L[]; ep?: L[]; leader_pct: number };
 
 const MARKETS: [string, string][] = [["nasdaq", "나스닥"], ["yahoo", "미국 전체"], ["kospi", "코스피"], ["kosdaq", "코스닥"], ["crypto", "크립토"]];
 const INDEX_NAME: Record<string, string> = { "^IXIC": "나스닥 종합", "^GSPC": "S&P 500", "^KS11": "코스피", "^KQ11": "코스닥", "BTC-USD": "비트코인" };
@@ -95,7 +96,8 @@ export default function Leaders() {
             <table className="w-full font-mono text-xs">
               <thead className="sticky top-0 bg-zinc-900 text-zinc-400"><tr>
                 <th className="text-left">종목</th><th className="text-left">섹터</th><th>1개월</th><th>3개월</th><th>6개월</th>
-                <th title="최근 20일 평균 일간 변동폭 (종가 기준 근사: 고가·저가 기준 ADR의 약 0.6~0.7배)">변동폭*</th><th>52주 고점 대비</th><th>10·20·50일선</th><th>거래대금(20일)</th>
+                <th title="ADR: 최근 20일 (고가÷저가 − 1) 평균. * = 고가·저가 이력이 부족해 종가 기준으로 근사한 값">ADR</th><th>52주 고점 대비</th><th>10·20·50일선</th>
+                <th title="종가가 직전 20거래일 최고 종가를 넘음">20일 돌파</th><th>거래대금(20일)</th>
               </tr></thead>
               <tbody>
                 {rows.map((l) => (
@@ -103,15 +105,38 @@ export default function Leaders() {
                     <td className="max-w-48 truncate text-left font-sans"><Link className="text-sky-300 hover:underline" href={stockHref(l.ticker, market === "nasdaq" ? "yahoo" : market)}>{kr || market === "crypto" ? l.name ?? l.ticker : l.ticker}</Link> <span className="text-[10px] text-zinc-500">{kr ? l.ticker : l.name}</span></td>
                     <td className="max-w-32 truncate text-left font-sans text-zinc-400">{l.sector ?? ""}</td>
                     <td className={tone(l.r21)}>{pct(l.r21, 0)}</td><td className={tone(l.r63)}>{pct(l.r63, 0)}</td><td className={tone(l.r126)}>{pct(l.r126, 0)}</td>
-                    <td>{l.adr.toFixed(1)}%</td><td className={l.off_high > -10 ? "text-emerald-400" : "text-zinc-400"}>{pct(l.off_high)}</td>
+                    <td>{l.adr.toFixed(1)}%{l.adr_true ? "" : "*"}</td><td className={l.off_high > -10 ? "text-emerald-400" : "text-zinc-400"}>{pct(l.off_high)}</td>
                     <td><Dot on={l.above10} /> <Dot on={l.above20} /> <Dot on={l.above50} /></td>
+                    <td>{l.breakout ? <span className="text-emerald-400">돌파</span> : ""}</td>
                     <td className="text-zinc-400">{kr ? `${(l.dvol / 1e8).toFixed(0)}억` : `$${(l.dvol / 1e6).toFixed(0)}M`}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
-          <div className="mt-1 text-[11px] text-zinc-500">* 데이터가 종가만 있어 변동폭은 종가 대비 등락폭 평균으로 근사했습니다 (Qullamaggie 기준 ADR 5%는 여기서 약 3~3.5%). 고점 근처(−10% 이내)에서 10·20일선 위에 있는 종목이 그의 셋업 후보입니다.</div>
+          <div className="mt-1 text-[11px] text-zinc-500">ADR = 최근 20일 고가÷저가 평균 (Qullamaggie는 보통 5% 이상을 봄). * 표시는 고가·저가 이력이 부족해 종가 등락으로 근사한 값(실제의 약 0.6~0.7배)이며, 2026-10-23부터 수집해 곧 채워집니다. 고점 근처(−10% 이내)에서 10·20일선 위에 있는 종목이 그의 셋업 후보입니다.</div>
+        </Panel>
+      )}
+
+      {data?.ep && (
+        <Panel title={`갭상승·급등 후보 (EP) ${data.ep.length}종목: 오늘 +8% 이상 갭(또는 종가 상승) + 거래량 50일 평균의 2배 이상`}>
+          {!data.ep.length ? <div className="text-xs text-zinc-500">오늘 조건을 만족한 종목이 없습니다.</div> : (
+            <table className="w-full font-mono text-xs">
+              <thead className="text-zinc-400"><tr><th className="text-left">종목</th><th className="text-left">섹터</th><th>갭</th><th>당일</th><th>거래량 배수</th><th>3개월</th><th>52주 고점 대비</th><th>거래대금(20일)</th></tr></thead>
+              <tbody>
+                {data.ep.map((l) => (
+                  <tr key={l.ticker} className="border-t border-zinc-900 text-center hover:bg-zinc-900">
+                    <td className="max-w-48 truncate text-left font-sans"><Link className="text-sky-300 hover:underline" href={stockHref(l.ticker, market === "nasdaq" ? "yahoo" : market)}>{kr || market === "crypto" ? l.name ?? l.ticker : l.ticker}</Link> <span className="text-[10px] text-zinc-500">{kr ? l.ticker : l.name}</span></td>
+                    <td className="max-w-32 truncate text-left font-sans text-zinc-400">{l.sector ?? ""}</td>
+                    <td className={tone(l.gap)}>{pct(l.gap)}</td><td className={tone(l.r1)}>{pct(l.r1)}</td><td>{l.vratio?.toFixed(1)}배</td>
+                    <td className={tone(l.r63)}>{pct(l.r63, 0)}</td><td>{pct(l.off_high)}</td>
+                    <td className="text-zinc-400">{kr ? `${(l.dvol / 1e8).toFixed(0)}억` : `$${(l.dvol / 1e6).toFixed(0)}M`}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+          <div className="mt-1 text-[11px] text-zinc-500">EP(episodic pivot): 실적·뉴스 같은 사건으로 큰 갭과 거래량이 함께 터진 종목. Qullamaggie의 핵심 셋업 중 하나입니다. 시가가 없는 과거 데이터는 당일 상승률로 대신합니다.</div>
         </Panel>
       )}
     </div>

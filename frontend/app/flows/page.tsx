@@ -65,13 +65,13 @@ export default function Flows() {
         </div>
         {view && <TimeChart dates={view.dates} series={view.series} spy={view.spy} lowerName={bench.name} height={460} yName="억원" />}
         <div className="mt-1 text-[11px] text-zinc-500">
-          위 칸 = 오늘 시장 전체 순매수 (네이버, 장중에는 잠정치). 차트 = 시가총액 상위 {data?.tracked ?? 300}종목의 투자자별 순매수(주식 수 × 그날 종가)를 누적한 값, 아래 = 코스피 지수.
+          위 칸 = 오늘 시장 전체 순매수 (네이버, 장중에는 잠정치). 차트 = 코스피·코스닥 전 종목({data?.tracked?.toLocaleString() ?? "—"}개)의 투자자별 순매수(주식 수 × 그날 종가)를 누적한 값, 아래 = 코스피 지수. 종목별 값은 매일 18시(KST) 이후 확정치로 갱신.
           기준일 {data?.latest ?? "—"}. 개인 + 외국인 + 기관 합은 기타법인 때문에 0이 아닐 수 있습니다.
         </div>
       </Panel>
 
       {data && data.sectors.length > 0 && (
-        <Panel title="업종별 순매수 (추적 종목 합계)">
+        <Panel title="업종별 순매수 (전 종목 합계)">
           <div className="max-h-[420px] overflow-auto">
             <table className="w-full font-mono text-xs">
               <thead className="sticky top-0 bg-zinc-900 text-zinc-400"><tr>

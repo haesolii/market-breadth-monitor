@@ -174,6 +174,21 @@ def _copy(cur, name: str, df: pd.DataFrame) -> None:
             cp.write(chunk)
 
 
+def select(name: str, col: str, value) -> pd.DataFrame:
+    """Rows of a published table where col = value, straight from the DB (for big tables the
+    deployed API should not load whole, e.g. per-stock flows)."""
+    hit = _cache.get(f"s:{name}:{col}:{value}")
+    if hit and time.time() - hit[0] < CACHE_SECONDS:
+        return hit[1]
+    with _connect() as con, con.cursor() as cur:
+        cur.execute("SELECT to_regclass(%s)", (name,))
+        df = _select(cur, f"SELECT * FROM {_q(name)} WHERE {_q(col)} = %s", (value,)) if cur.fetchone()[0] else pd.DataFrame()
+        con.commit()
+    with _lock:
+        _cache[f"s:{name}:{col}:{value}"] = (time.time(), df)
+    return df
+
+
 def kv_get(key: str, default=None):
     hit = _cache.get("k:" + key)
     if hit and time.time() - hit[0] < CACHE_SECONDS:

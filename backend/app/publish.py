@@ -12,7 +12,7 @@ import json
 
 import pandas as pd
 
-from . import refresh, remote, store, universes, validation, world
+from . import flows, refresh, remote, store, universes, validation, world
 from .config import DATA
 
 TABLES = ["breadth20", "market_monitor_daily", "indices", "macro", "sector_map", "sector_daily", "etf_latest", "etf_changes", "etf_funds",
@@ -74,6 +74,7 @@ def publish() -> None:
             remote.kv_set("versions", versions, cur)
             remote.kv_set("status", st, cur)
             remote.kv_set("validation", report, cur)
+            remote.kv_set("kr_flow_overview", flows.clean(flows.overview()), cur)  # kr_flow is too big for the API to load
             if remote.kv_get("indices_config") is None:  # seed once; afterwards the dashboard owns it
                 remote.kv_set("indices_config", world.config(), cur)
         con.commit()

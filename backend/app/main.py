@@ -469,7 +469,7 @@ def analyst_stock(code: str):
 @app.get("/api/flows")
 def kr_flows(days: int = Query(120, ge=5, le=400)):
     st = store.status()["sources"].get("flows", {})
-    return {**flows.overview(days), "last_success": st.get("last_success"), "last_error": st.get("last_error")}
+    return {**flows.view(days), "last_success": st.get("last_success"), "last_error": st.get("last_error")}
 
 
 @app.get("/api/dart")

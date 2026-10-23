@@ -193,7 +193,7 @@ function StockPage() {
   return (
     <div className="space-y-3">
       <Panel title="종목 상세 (Stock)" right={<Search key={t} initial="" />}>
-        <div className="text-[11px] text-zinc-500">한 종목의 수익률·업종 내 순위, 투자자별 수급(한국 상위 300), 증권사 리포트, 액티브 ETF 보유·매매, 실적을 모아 봅니다. 섹터 히트맵에서 종목을 더블클릭해도 열립니다.</div>
+        <div className="text-[11px] text-zinc-500">한 종목의 수익률·업종 내 순위, 투자자별 수급(한국 전 종목), 증권사 리포트, 액티브 ETF 보유·매매, 실적을 모아 봅니다. 섹터 히트맵에서 종목을 더블클릭해도 열립니다.</div>
       </Panel>
       {q && !t && <ByName q={q} />}
       {t && <Detail key={t + m} t={t} m={m} />}

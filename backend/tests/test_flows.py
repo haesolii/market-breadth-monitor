@@ -28,3 +28,9 @@ def test_dart_collapse_same_day_filings():
     out = dart.collapse(df).set_index("code")
     assert out.loc["A", "rcept_no"] == "3" and out.loc["A", "extra"] == 2 and out.loc["A", "subsidiary"]
     assert out.loc["B", "correction"] and out.loc["B", "extra"] == 0
+
+
+def test_flow_plan_backfills_new_and_daily_once():
+    assert flows.plan(["A", "B"], {"A"}, daily_due=False) == {"B": flows.BACKFILL_PAGES}
+    assert flows.plan(["A", "B"], {"A"}, daily_due=True) == {"B": flows.BACKFILL_PAGES, "A": 1}
+    assert flows.clean({"x": [float("nan"), 1.0]}) == {"x": [None, 1.0]}

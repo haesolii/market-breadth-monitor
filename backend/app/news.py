@@ -22,6 +22,8 @@ GOOGLE = "https://news.google.com/rss/search?q={q}&hl={hl}&gl={gl}&ceid={gl}:{la
 BROWSER_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/126 Safari/537.36"
 KST = dt.timezone(dt.timedelta(hours=9))
 CACHE_S = 300
+N = 100      # headlines per list
+PAGE = 50    # Naver rejects pageSize 100 (400); two pages of 50
 KR = ("kospi", "kosdaq")
 _cache: dict[str, tuple[float, list[dict]]] = {}
 _lock = threading.Lock()
@@ -95,22 +97,31 @@ def _google(q: str, lang: str = "en") -> list[dict]:
     return parse_google(r.text)
 
 
-def stock(ticker: str, market: str, name: str = "", n: int = 30) -> list[dict]:
+def _pages(url: str, params: dict, parse, n: int) -> list[dict]:
+    s, out, seen = _s(), [], set()
+    for page in range(1, -(-n // PAGE) + 1):
+        r = s.get(url, params={**params, "pageSize": PAGE, "page": page}, timeout=15)
+        r.raise_for_status()
+        got = [x for x in parse(r.json()) if x["url"] not in seen]
+        if not got:
+            break
+        seen.update(x["url"] for x in got)
+        out += got
+    return out[:n]
+
+
+def stock(ticker: str, market: str, name: str = "", n: int = N) -> list[dict]:
     if market in KR:
         def fn():
-            r = _s().get(NAVER_STOCK.format(code=ticker), params={"pageSize": n}, timeout=15)
-            r.raise_for_status()
-            return parse_naver_stock(r.json())
+            return _pages(NAVER_STOCK.format(code=ticker), {}, parse_naver_stock, N)
         return _cached(f"kr:{ticker}", fn)[:n]
     q = f"{ticker}-USD crypto when:7d" if market == "crypto" else f"{ticker} stock when:7d"
     return sorted(_cached(f"us:{q}", lambda: _google(q)), key=lambda x: x["time"], reverse=True)[:n]
 
 
-def market(n: int = 40) -> dict:
+def market(n: int = N) -> dict:
     def kr():
-        r = _s().get(NAVER_MAIN, params={"category": "mainnews", "pageSize": n, "page": 1}, timeout=15)
-        r.raise_for_status()
-        return parse_naver_main(r.json())
+        return _pages(NAVER_MAIN, {"category": "mainnews"}, parse_naver_main, N)
     us = lambda: sorted(_google("stock market when:1d"), key=lambda x: x["time"], reverse=True)  # noqa: E731
     return {"kr": _cached("kr:main", kr)[:n], "us": _cached("us:main", us)[:n]}
 

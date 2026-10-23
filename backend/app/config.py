@@ -19,3 +19,4 @@ CRYPTO_SCANNER = os.getenv("CRYPTO_SCANNER", "1") == "1"
 YAHOO_HISTORY = os.getenv("YAHOO_HISTORY", "5y")
 REFRESH_INTERVAL_MIN = float(os.getenv("REFRESH_INTERVAL_MIN", "15"))
 DART_API_KEY = os.getenv("DART_API_KEY", "").strip()  # opendart.fss.or.kr (free): 잠정실적 disclosures
+FRED_API_KEY = os.getenv("FRED_API_KEY", "").strip()  # fred.stlouisfed.org (free): CPI / jobs release dates

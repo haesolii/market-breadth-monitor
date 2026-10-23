@@ -16,9 +16,11 @@ from . import flows, refresh, remote, store, universes, validation, world
 from .config import DATA
 
 TABLES = ["breadth20", "market_monitor_daily", "indices", "macro", "sector_map", "sector_daily", "etf_latest", "etf_changes", "etf_funds",
-          "analyst_reports", "earnings", "macro_releases", "ai_brief", "kr_flow", "kr_flow_market", "dart_prelim"]
+          "analyst_reports", "earnings", "macro_releases", "ai_brief", "kr_flow", "kr_flow_market", "dart_prelim",
+          "leaders_breadth", "leaders_list", "econ_calendar", "kr_ir", "vol_index", "vix_futures", "futures_basis", "crude_curve"]
 RESTORE = {"etf_changes": "etf_changes", "etf_snapshots": "etf_latest", "earnings": "earnings",
-           "macro_releases": "macro_releases", "ai_brief": "ai_brief", "kr_flow_market": "kr_flow_market"}  # local table <- published table
+           "macro_releases": "macro_releases", "ai_brief": "ai_brief", "kr_flow_market": "kr_flow_market",
+           "vix_futures": "vix_futures", "futures_basis": "futures_basis", "kr_ir": "kr_ir"}  # local table <- published table
 SCAN_SESSIONS = 20  # recent sessions of per-ticker scan results kept for the dashboard
 
 
@@ -41,6 +43,10 @@ def pull_config() -> None:
     if items:
         (DATA / "indices.json").write_text(json.dumps(items, ensure_ascii=False, indent=1), "utf-8")
         print(f"indices list from Supabase: {len(items)} symbols")
+    wl = remote.kv_get("watchlist")
+    if wl is not None:  # the dashboard owns the watchlist; alerts on the runner read the local copy
+        (DATA / "watchlist.json").write_text(json.dumps(wl, ensure_ascii=False, indent=1), "utf-8")
+        print(f"watchlist from Supabase: {len(wl)} stocks")
     # Accumulated history that cannot be re-downloaded: restore it when the runner's data cache is gone.
     for local, published in RESTORE.items():
         if store.read(local).empty:

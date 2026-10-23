@@ -8,7 +8,7 @@ import traceback
 
 import pandas as pd
 
-from . import analyst, dart, earnings, etf, flows, indicators, macro, sectors, store, universes, world
+from . import analyst, calendar_, dart, earnings, etf, flows, indicators, leaders, macro, sectors, store, term, universes, world
 from .collectors import massive, public, yahoo
 from .config import CRYPTO_SCANNER, DART_API_KEY, KR_SCANNER, MASSIVE_API_KEY, MASSIVE_START, REFRESH_INTERVAL_MIN, YAHOO_HISTORY, YAHOO_SCANNER
 from .market_calendar import CALENDARS, latest_complete_session, live_session, session_elapsed, sessions, volume_share
@@ -20,12 +20,13 @@ def enabled_sources() -> list[str]:
     return (["public_repo", "indices", "macro"] + (["yahoo"] if YAHOO_SCANNER else [])
             + (["kospi", "kosdaq"] if KR_SCANNER else []) + (["crypto"] if CRYPTO_SCANNER else [])
             + (["massive"] if MASSIVE_API_KEY else []) + ["sectors", "etf", "analyst", "earnings"]
-            + (["flows"] if KR_SCANNER else []) + (["dart"] if DART_API_KEY else []))
+            + (["flows"] if KR_SCANNER else []) + (["dart"] if DART_API_KEY else []) + ["leaders", "calendar", "term"])
 
 
 # Sources with their own table (the rest are breadth sources, dated by breadth20).
 OWN_TABLE = {"indices": "indices", "macro": "macro", "sectors": "sector_map", "etf": "etf_latest",
-             "analyst": "analyst_reports", "earnings": "earnings", "flows": "kr_flow", "dart": "dart_prelim"}
+             "analyst": "analyst_reports", "earnings": "earnings", "flows": "kr_flow", "dart": "dart_prelim",
+             "leaders": "leaders_breadth", "calendar": "econ_calendar", "term": "vol_index"}
 
 
 def latest_date(source: str):
@@ -204,7 +205,7 @@ REFRESHERS = {"indices": world.refresh, "macro": macro.refresh, "public_repo": r
               "kosdaq": lambda: refresh_universe("kosdaq"), "crypto": lambda: refresh_universe("crypto"),
               "massive": refresh_massive, "sectors": sectors.refresh,
               "etf": etf.refresh, "analyst": analyst.refresh, "earnings": earnings.refresh,
-              "flows": flows.refresh, "dart": dart.refresh}
+              "flows": flows.refresh, "dart": dart.refresh, "leaders": leaders.refresh, "calendar": calendar_.refresh, "term": term.refresh}
 # Sources that can carry today's in-progress session (provisional until the close is final).
 LIVE = {"indices": lambda: world.refresh(live=True), "sectors": sectors.refresh,
         "yahoo": lambda: refresh_universe("yahoo", True),
@@ -278,7 +279,7 @@ def _last_ok(source: str) -> float:
 # Refreshed on a timer instead of against the trading calendar: world markets close at
 # different times (indices) and macro series are released on their own schedules.
 PERIODIC = {"indices": 3600, "macro": 1800, "sectors": 3600, "etf": 3 * 3600,
-            "analyst": 3600, "earnings": 6 * 3600, "flows": 1800, "dart": 1800}
+            "analyst": 3600, "earnings": 3600, "flows": 1800, "dart": 1800, "leaders": 1800, "calendar": 6 * 3600, "term": 1800}
 # Recomputed on every pass (cheap; they follow several markets' sessions).
 ALWAYS = {"indices", "sectors"}
 
@@ -293,8 +294,8 @@ def auto_loop(stop: threading.Event) -> None:
         stale = [s for s in enabled_sources()
                  if s not in PERIODIC and _behind(s) and time.time() >= retry_at.get(s, 0)]
         stale += [s for s, every in PERIODIC.items() if time.time() - _last_ok(s) >= every]
-        if any(s in universes.UNIVERSES for s in stale) and "sectors" not in stale:
-            stale.append("sectors")  # new bars -> new returns
+        if any(s in universes.UNIVERSES for s in stale):
+            stale += [x for x in ("sectors", "leaders") if x not in stale]  # new bars -> new returns / averages
         if stale:
             refresh(stale)
             for s in (x for x in stale if x not in PERIODIC):
@@ -306,7 +307,7 @@ def auto_loop(stop: threading.Event) -> None:
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser(description="Refresh breadth data (used by Task Scheduler).")
-    ap.add_argument("--source", action="append", help="indices|macro|public_repo|yahoo|kospi|kosdaq|crypto|massive|sectors|etf|analyst|earnings|flows|dart (default: all enabled)")
+    ap.add_argument("--source", action="append", help="indices|macro|public_repo|yahoo|kospi|kosdaq|crypto|massive|sectors|etf|analyst|earnings|flows|dart|leaders|calendar|term (default: all enabled)")
     ap.add_argument("--only-stale", action="store_true")
     ap.add_argument("--live", action="store_true", help="include today's in-progress session for markets now open")
     a = ap.parse_args()

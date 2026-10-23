@@ -13,7 +13,7 @@ from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-from . import analyst, brief, dart, earnings, etf, flows, indicators, macro, refresh, remote, research, sectors, stock, store, universes, usage, validation, world
+from . import analyst, brief, calendar_, dart, earnings, etf, flows, leaders, term, watch, indicators, macro, refresh, remote, research, sectors, stock, store, universes, usage, validation, world
 from .config import MASSIVE_API_KEY, REFRESH_INTERVAL_MIN, YAHOO_SCANNER
 from .indicators import MM_COLS
 from .market_calendar import CALENDARS, latest_complete_session
@@ -136,7 +136,7 @@ def status():
            "expected_sessions": {c: str(latest_complete_session(cal=c)) for c in ("NYSE", "XKRX")},
            "final_hours": {c: h for c, (_, h) in CALENDARS.items()}, "refresh_min": REFRESH_INTERVAL_MIN}
     enabled = refresh.enabled_sources()
-    for s in ["indices", "macro", "public_repo", "yahoo", "nasdaq", "kospi", "kosdaq", "crypto", "massive", "sectors", "etf", "analyst", "earnings", "flows", "dart"]:
+    for s in ["indices", "macro", "public_repo", "yahoo", "nasdaq", "kospi", "kosdaq", "crypto", "massive", "sectors", "etf", "analyst", "earnings", "flows", "dart", "leaders", "calendar", "term"]:
         ld = refresh.latest_date(s)
         derived = universes.UNIVERSES.get(s, {}).get("derived_from")
         out["sources"][s] = {**st["sources"].get(s, {}), "latest_date": str(ld) if ld else None,
@@ -475,6 +475,51 @@ def kr_flows(days: int = Query(120, ge=5, le=400)):
 @app.get("/api/dart")
 def dart_prelim(days: int = Query(30, ge=1, le=365)):
     return {"enabled": bool(dart.DART_API_KEY) or not store.read("dart_prelim").empty, "rows": dart.view(days)}
+
+
+@app.get("/api/leaders")
+def leaders_view(market: str = "nasdaq"):
+    if market not in leaders.MARKETS:
+        raise HTTPException(400, "unknown market")
+    return leaders.view(market)
+
+
+@app.get("/api/calendar")
+def calendar_view(back: int = Query(3, ge=0, le=30), ahead: int = Query(30, ge=1, le=120), min_cap: float = Query(5e10, ge=0)):
+    return calendar_.view(back, ahead, min_cap)
+
+
+@app.get("/api/term")
+def term_view(days: int = Query(252, ge=20, le=800)):
+    return term.view(days)
+
+
+class WatchIn(BaseModel):
+    ticker: str
+    market: str
+
+
+@app.get("/api/watchlist")
+def watchlist():
+    return watch.overview()
+
+
+@app.post("/api/watchlist")
+def watchlist_save(items: list[WatchIn]):
+    """Replace the watchlist; every stock must be in the sector map (same tickers as the stock page)."""
+    sm = store.read("sector_map")
+    known = set(zip(sm["ticker"], sm["market"])) if len(sm) else set()
+    names = dict(zip(zip(sm["ticker"], sm["market"]), sm["name"])) if len(sm) else {}
+    out = []
+    for it in items:
+        if (it.ticker, it.market) not in known:
+            raise HTTPException(400, f"'{it.ticker}' 종목을 찾을 수 없습니다")
+        if all((x["ticker"], x["market"]) != (it.ticker, it.market) for x in out):
+            out.append({"ticker": it.ticker, "market": it.market, "name": names.get((it.ticker, it.market), it.ticker)})
+    if len(out) > 200:
+        raise HTTPException(400, "관심종목은 200개까지")
+    watch.save(out)
+    return {"ok": True, "items": out}
 
 
 @app.get("/api/stock/search")

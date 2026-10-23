@@ -19,6 +19,10 @@ const MENU = [
   ["/reports", "11. 리포트·실적", "Reports & Earnings"],
   ["/flows", "12. 한국 수급", "Korea Investor Flows"],
   ["/stock", "13. 종목 상세", "Stock Detail"],
+  ["/leaders", "14. 주도주·추세", "Leaders & Trend (Qullamaggie)"],
+  ["/watch", "15. 관심종목", "Watchlist & Alerts"],
+  ["/calendar", "16. 일정 캘린더", "Earnings & Macro Calendar"],
+  ["/term", "17. 변동성·선물 구조", "Volatility & Futures Curve"],
 ];
 
 export const localTime = (iso?: string | null) => (iso ? new Date(iso).toLocaleString("ko-KR", { hour12: false }) : "—");

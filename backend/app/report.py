@@ -17,7 +17,7 @@ import re
 import pandas as pd
 import requests
 
-from . import flows, remote, research, store
+from . import flows, remote, research, store, watch
 from .market_calendar import latest_complete_session
 
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
@@ -212,7 +212,11 @@ def signals() -> str | None:
             sent[f"score:{src}"] = sc["date"]
             lines.append(f"• <b>{label}</b> {sc['date']}: {html.escape(msg)}")
     store.set_source("_signals", sent=sent)
-    return "\n".join(["🔔 <b>시장 폭 신호</b> (기본 강조 기준, 매매 신호 아님)", *lines]) if lines else None
+    out = ["🔔 <b>시장 폭 신호</b> (기본 강조 기준, 매매 신호 아님)", *lines] if lines else []
+    wl = watch.alerts()
+    if wl:
+        out += ([""] if out else []) + ["⭐ <b>관심종목</b>", *wl[:40]]
+    return "\n".join(out) if out else None
 
 
 def brief_text() -> str | None:

@@ -1,14 +1,15 @@
 "use client";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Suspense, useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo } from "react";
 import { Err, Kpi, Panel } from "@/components/bits";
 import { TimeChart } from "@/components/TimeChart";
+import { StockSearch, type Hit } from "@/components/StockSearch";
 import { TVChart, tvLink, tvStock } from "@/components/TVChart";
+import { WatchStar } from "@/components/WatchStar";
 import { useApi } from "@/lib/api";
-import { WHO, eok, stockHref } from "@/lib/stock";
+import { MK, WHO, eok, stockHref } from "@/lib/stock";
 
-type Hit = { ticker: string; name: string; market: string; exchange: string; sector: string; size: number };
 type Rep = { nid: number; date: string; broker: string; title: string; summary: string; goal: number | null; prev_goal: number | null; goal_chg: number | null; opinion: string; react1d: number | null };
 type D = {
   ticker: string; name: string; market: string; exchange: string; sector: string; industry: string; size: number; close: number; date: string;
@@ -23,38 +24,12 @@ type D = {
 };
 
 const P: [string, string][] = [["r1d", "1일"], ["r1w", "1주"], ["r1m", "1개월"], ["r3m", "3개월"], ["r1y", "1년"], ["ytd", "연초 대비"]];
-const MK: Record<string, string> = { yahoo: "미국", kospi: "코스피", kosdaq: "코스닥", crypto: "크립토" };
 const pct = (v: number | null | undefined, d = 1) => (v === null || v === undefined ? "—" : `${v > 0 ? "+" : ""}${v.toFixed(d)}%`);
 const tone = (v: number | null | undefined) => (!v ? "text-zinc-400" : v > 0 ? "text-emerald-400" : "text-red-400");
 const kr = (m: string) => m === "kospi" || m === "kosdaq";
 const money = (v: number, m: string) => (kr(m) ? `${(v / 1e12).toLocaleString("ko-KR", { maximumFractionDigits: 2 })}조 원` : v >= 1e9 ? `$${(v / 1e9).toFixed(1)}B` : `$${(v / 1e6).toFixed(0)}M`);
 const num = (v: number | null | undefined, d = 0) => (v === null || v === undefined ? "—" : v.toLocaleString("en-US", { maximumFractionDigits: d }));
 const cum = (a: number[]) => a.reduce<number[]>((o, v) => [...o, (o.at(-1) ?? 0) + v], []);
-
-function Search({ initial }: { initial: string }) {
-  const [q, setQ] = useState(initial);
-  const [deb, setDeb] = useState(initial);
-  useEffect(() => { const t = setTimeout(() => setDeb(q.trim()), 250); return () => clearTimeout(t); }, [q]);
-  const { data } = useApi<Hit[]>(deb ? `/api/stock/search?q=${encodeURIComponent(deb)}` : null);
-  const router = useRouter();
-  return (
-    <div className="relative w-full max-w-md">
-      <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="종목명 또는 티커 (예: 삼성전자, 005930, NVDA)"
-        onKeyDown={(e) => { if (e.key === "Enter" && data?.[0]) router.push(stockHref(data[0].ticker, data[0].market)); }}
-        className="w-full rounded border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-sm text-zinc-100 placeholder:text-zinc-500" />
-      {deb && q === deb && data && data.length > 0 && (
-        <div className="absolute z-20 mt-1 max-h-80 w-full overflow-auto rounded border border-zinc-700 bg-zinc-950 text-sm shadow-lg">
-          {data.map((h) => (
-            <Link key={h.market + h.ticker} href={stockHref(h.ticker, h.market)} onClick={() => setQ("")} className="flex gap-2 px-3 py-1.5 hover:bg-zinc-800">
-              <span className="text-zinc-100">{h.name}</span><span className="font-mono text-zinc-500">{h.ticker}</span>
-              <span className="ml-auto text-xs text-zinc-500">{MK[h.market] ?? h.market} · {h.sector}</span>
-            </Link>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
 
 /** ?q=name (from lists that carry names only): jump to the exact-name match. */
 function ByName({ q }: { q: string }) {
@@ -77,7 +52,7 @@ function Detail({ t, m }: { t: string; m: string }) {
   return (
     <div className="space-y-3">
       <Panel title={<>{d.name} <span className="font-mono text-zinc-400">{d.ticker}</span> <span className="text-xs font-normal text-zinc-500">{MK[d.market] ?? d.market} · {d.sector}{d.industry && d.industry !== d.sector ? ` · ${d.industry}` : ""}</span></>}
-        right={<a className="text-xs text-sky-400 hover:underline" target="_blank" rel="noreferrer" href={tvLink(kr(d.market) ? `KRX:${d.ticker}` : (tv ?? d.ticker))}>TradingView ↗</a>}>
+        right={<><WatchStar ticker={d.ticker} market={d.market} /><a className="text-xs text-sky-400 hover:underline" target="_blank" rel="noreferrer" href={tvLink(kr(d.market) ? `KRX:${d.ticker}` : (tv ?? d.ticker))}>TradingView ↗</a></>}>
         <div className="grid gap-2 sm:grid-cols-3 lg:grid-cols-8">
           <Kpi label={`종가 (${d.date})`} value={num(d.close, kr(d.market) ? 0 : 2)} />
           <Kpi label={d.market === "crypto" ? "20일 평균 거래대금" : "시가총액"} value={<span className="text-lg">{money(d.size, d.market)}</span>} />
@@ -192,7 +167,7 @@ function StockPage() {
   const t = sp.get("t") ?? "", m = sp.get("m") ?? "", q = sp.get("q") ?? "";
   return (
     <div className="space-y-3">
-      <Panel title="종목 상세 (Stock)" right={<Search key={t} initial="" />}>
+      <Panel title="종목 상세 (Stock)" right={<StockSearch />}>
         <div className="text-[11px] text-zinc-500">한 종목의 수익률·업종 내 순위, 투자자별 수급(한국 전 종목), 증권사 리포트, 액티브 ETF 보유·매매, 실적을 모아 봅니다. 섹터 히트맵에서 종목을 더블클릭해도 열립니다.</div>
       </Panel>
       {q && !t && <ByName q={q} />}

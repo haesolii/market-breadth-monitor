@@ -5,3 +5,4 @@ export const eok = (v: number | null | undefined) => (v === null || v === undefi
 /** Stock detail page; `q` (a name) when the ticker is unknown (Korean ETF holdings carry names only). */
 export const stockHref = (ticker: string, market?: string) => `/stock?t=${encodeURIComponent(ticker)}${market ? `&m=${market}` : ""}`;
 export const stockByName = (name: string) => `/stock?q=${encodeURIComponent(name)}`;
+export const MK: Record<string, string> = { yahoo: "미국", nasdaq: "나스닥", kospi: "코스피", kosdaq: "코스닥", crypto: "크립토" };

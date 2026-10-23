@@ -9,7 +9,7 @@ import { MK, stockHref } from "@/lib/stock";
 
 type Item = { ticker: string; market: string; name?: string; sector?: string; close?: number | null; r1d?: number | null; r1w?: number | null; r1m?: number | null; ytd?: number | null };
 type Ev = { date: string; ticker: string; name: string; kind: string; text: string; key: string; upcoming: boolean };
-type Res = { items: Item[]; events: Ev[]; owner?: boolean };
+type Res = { items: Item[]; events: Ev[]; owner?: boolean; who?: "owner" | "member" | "guest" };
 
 const pct = (v: number | null | undefined) => (v === null || v === undefined ? "—" : `${v > 0 ? "+" : ""}${v.toFixed(1)}%`);
 const tone = (v: number | null | undefined) => (!v ? "text-zinc-400" : v > 0 ? "text-emerald-400" : "text-red-400");
@@ -36,10 +36,12 @@ export default function Watch() {
   const events = (data?.events ?? []).filter((e) => !kind || e.kind === kind);
   const kinds = [...new Set((data?.events ?? []).map((e) => e.kind))];
 
-  if (data && data.owner === false) return (
+  if (data?.who === "guest") return (
     <Panel title="관심종목">
-      <div className="py-6 text-center text-sm text-zinc-400">관심종목과 알림은 운영자 전용 기능입니다.<br />
-        <span className="text-xs text-zinc-500">종목은 위쪽 검색창에서 찾아볼 수 있습니다.</span></div>
+      <div className="space-y-2 py-8 text-center text-sm text-zinc-400">
+        <div>로그인하면 나만의 관심종목을 만들고 리포트·공시·수급·뉴스를 한곳에서 볼 수 있습니다.</div>
+        <Link href="/community/account" className="inline-block rounded bg-sky-700 px-4 py-1.5 text-sm text-white hover:bg-sky-600">로그인 · 가입</Link>
+      </div>
     </Panel>
   );
   return (
@@ -47,6 +49,7 @@ export default function Watch() {
       <Panel title="관심종목 (Watchlist)" right={<StockSearch onPick={add} placeholder="관심종목 추가: 종목명 또는 티커" />}>
         <Err error={error ?? err} />
         <div className="text-[11px] text-zinc-500">
+          {data?.who === "member" ? "관심종목은 내 계정에만 저장됩니다. 텔레그램 알림은 아직 운영자 계정에만 연결돼 있고, 아래 소식은 화면에서 확인할 수 있습니다. " : ""}
           여기 넣은 종목의 리포트·목표가 변경, 액티브 ETF 편입·편출, 외국인·기관 대량 매매(그 종목 평소 60일 평균의 3배 이상), 잠정실적·주요 공시(유상증자, 자사주, 수주 등), 실적·IR 예정(하루 전), 하루 ±5% 급등락을
           텔레그램 &ldquo;시장 폭 신호&rdquo; 메시지에 함께 보내 드립니다 (같은 사건은 한 번만). 종목 상세 화면의 ☆ 버튼으로도 추가할 수 있습니다.
         </div>

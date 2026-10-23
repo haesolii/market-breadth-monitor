@@ -547,17 +547,30 @@ def _is_owner(request: Request) -> bool:
     return not remote.ON or board.is_admin(request)
 
 
+def _watch_of(request: Request) -> tuple[str, list[dict] | None]:
+    """Whose watchlist this request sees: the owner's shared list (drives the Telegram alerts; also the
+    local single-user run), a signed-in member's own list, or none for visitors."""
+    if not remote.ON:
+        return "owner", watch.load()
+    uid, admin = board.member(request)
+    if admin:
+        return "owner", watch.load()
+    return ("member", board.watch_get(uid)) if uid else ("guest", None)
+
+
 @app.get("/api/watchlist")
 def watchlist(request: Request):
-    """The owner's list (it drives the owner's Telegram alerts): other visitors get an empty one."""
-    if not _is_owner(request):
-        return {"items": [], "events": [], "owner": False}
-    return {**watch.overview(), "owner": True}
+    who, items = _watch_of(request)
+    if items is None:
+        return {"items": [], "events": [], "owner": False, "who": who}
+    return {**watch.overview(items), "owner": who == "owner", "who": who}
 
 
 @app.post("/api/watchlist")
 def watchlist_save(items: list[WatchIn], request: Request):
-    owner_only(request)
+    who, _ = _watch_of(request)
+    if who == "guest":
+        raise HTTPException(401, "게시판에 로그인하면 관심종목을 쓸 수 있습니다")
     """Replace the watchlist; every stock must be in the sector map (same tickers as the stock page)."""
     sm = store.read("sector_map")
     known = set(zip(sm["ticker"], sm["market"])) if len(sm) else set()
@@ -570,7 +583,10 @@ def watchlist_save(items: list[WatchIn], request: Request):
             out.append({"ticker": it.ticker, "market": it.market, "name": names.get((it.ticker, it.market), it.ticker)})
     if len(out) > 200:
         raise HTTPException(400, "관심종목은 200개까지")
-    watch.save(out)
+    if who == "owner":
+        watch.save(out)
+    else:
+        board.watch_set(board.member(request)[0], out)
     return {"ok": True, "items": out}
 
 
@@ -596,7 +612,8 @@ def news_stock(ticker: str, market: str):
 
 @app.get("/api/news/watch")
 def news_watch(request: Request):
-    return news.watch(watch.load()) if _is_owner(request) else []
+    _, items = _watch_of(request)
+    return news.watch(items) if items else []
 
 
 @app.get("/api/stock/search")

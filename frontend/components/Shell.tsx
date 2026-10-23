@@ -3,6 +3,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { send, useApi, type Status } from "@/lib/api";
+import { AccountLink } from "@/components/AccountLink";
 import { StockSearch } from "@/components/StockSearch";
 import { Button } from "@/components/ui/button";
 
@@ -125,6 +126,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
         </div>
         {/* phones: one native menu (grouped) instead of a long scroll strip */}
         <div className="px-3 pb-2 md:hidden">
+          <AccountLink className="pb-2 text-xs" />
           <select value={MENU.find(([h]) => active(h, path))?.[0] ?? ""} onChange={(e) => router.push(e.target.value)} aria-label="메뉴"
             className="w-full rounded border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-100">
             {!MENU.some(([h]) => active(h, path)) && <option value="">메뉴 선택</option>}
@@ -145,7 +147,8 @@ export function Shell({ children }: { children: React.ReactNode }) {
             </div>
           ))}
         </div>
-        <Link href="/privacy" className="block px-5 pb-1 text-[11px] text-zinc-600 hover:text-zinc-300">개인정보처리방침</Link>
+        <div className="hidden px-5 pb-2 text-xs md:block"><AccountLink /></div>
+        <Link href="/privacy" className="block px-5 pb-3 text-[11px] text-zinc-600 hover:text-zinc-300">개인정보처리방침</Link>
       </nav>
       <div className="min-w-0 flex-1">
         <StatusBar />

@@ -117,8 +117,8 @@ def big_flows(f: pd.DataFrame, size: float, since: dt.date) -> list[tuple]:
     return out
 
 
-def overview() -> dict:
-    items = load()
+def overview(items: list[dict] | None = None) -> dict:
+    items = load() if items is None else items
     sm = store.read("sector_map")
     rows = []
     for it in items:

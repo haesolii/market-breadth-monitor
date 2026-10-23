@@ -1,9 +1,10 @@
 "use client";
+import Link from "next/link";
 import { useState } from "react";
 import { send, useApi } from "@/lib/api";
 
 export type WatchItem = { ticker: string; market: string; name?: string };
-type WatchRes = { items: WatchItem[]; owner?: boolean };
+type WatchRes = { items: WatchItem[]; owner?: boolean; who?: string };
 
 /** ☆ / ★ toggle that adds or removes one stock from the shared watchlist. */
 export function WatchStar({ ticker, market }: { ticker: string; market: string }) {
@@ -11,7 +12,7 @@ export function WatchStar({ ticker, market }: { ticker: string; market: string }
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const items = data?.items ?? [];
-  if (data?.owner === false) return null;  // the watchlist is the owner's
+  if (data?.who === "guest") return <Link href="/community/account" className="rounded border border-zinc-700 px-2 py-0.5 text-xs text-zinc-400 hover:text-zinc-200" title="로그인하면 관심종목에 담을 수 있습니다">☆ 관심종목 (로그인)</Link>;
   const on = items.some((x) => x.ticker === ticker && x.market === market);
   const toggle = async () => {
     setBusy(true);

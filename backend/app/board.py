@@ -64,6 +64,8 @@ SCHEMA = [
     f"""CREATE TABLE IF NOT EXISTS board_reports (id {ID}, kind TEXT NOT NULL, target_id BIGINT NOT NULL, reason TEXT NOT NULL,
         ip TEXT NOT NULL, created_at TEXT NOT NULL, handled SMALLINT NOT NULL DEFAULT 0)""",
     "CREATE TABLE IF NOT EXISTS board_bans (target TEXT PRIMARY KEY, until_at TEXT NOT NULL, reason TEXT NOT NULL)",
+    """CREATE TABLE IF NOT EXISTS board_watch (user_id BIGINT NOT NULL, ticker TEXT NOT NULL, market TEXT NOT NULL, name TEXT NOT NULL,
+        created_at TEXT NOT NULL, PRIMARY KEY (user_id, ticker, market))""",
 ]
 
 
@@ -224,12 +226,31 @@ class Who:
         self.admin = bool(self.user and self.user["username"].lower() in ADMINS)
 
 
+def member(request: Request) -> tuple[int | None, bool]:
+    """(member id, is admin) of the board session, (None, False) for visitors."""
+    if not session_uid(request.cookies.get("bd_session")):
+        return None, False
+    with tx() as t:
+        w = Who(t, request)
+        return w.uid, w.admin
+
+
 def is_admin(request: Request) -> bool:
     """Signed in on the board as an admin (BOARD_ADMINS)."""
-    if not request.cookies.get("bd_session"):
-        return False
+    return member(request)[1]
+
+
+def watch_get(uid: int) -> list[dict]:
     with tx() as t:
-        return Who(t, request).admin
+        return t.q("SELECT ticker, market, name FROM board_watch WHERE user_id = %s ORDER BY created_at", (uid,))
+
+
+def watch_set(uid: int, items: list[dict]) -> None:
+    with tx() as t:
+        t.q("DELETE FROM board_watch WHERE user_id = %s", (uid,))
+        for i, it in enumerate(items):
+            t.q("INSERT INTO board_watch (user_id, ticker, market, name, created_at) VALUES (%s, %s, %s, %s, %s)",
+                (uid, it["ticker"], it["market"], it.get("name") or it["ticker"], f"{now()}#{i:03d}"))
 
 
 def _public(row: dict, who: Who | None = None) -> dict:

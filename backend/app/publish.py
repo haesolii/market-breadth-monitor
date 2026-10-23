@@ -15,7 +15,7 @@ import pandas as pd
 from . import refresh, remote, store, universes, validation, world
 from .config import DATA
 
-TABLES = ["breadth20", "market_monitor_daily", "indices", "macro"]
+TABLES = ["breadth20", "market_monitor_daily", "indices", "macro", "sector_map"]
 SCAN_SESSIONS = 20  # recent sessions of per-ticker scan results kept for the dashboard
 
 

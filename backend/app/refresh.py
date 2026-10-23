@@ -8,7 +8,7 @@ import traceback
 
 import pandas as pd
 
-from . import indicators, macro, store, universes, world
+from . import indicators, macro, sectors, store, universes, world
 from .collectors import massive, public, yahoo
 from .config import CRYPTO_SCANNER, KR_SCANNER, MASSIVE_API_KEY, MASSIVE_START, REFRESH_INTERVAL_MIN, YAHOO_HISTORY, YAHOO_SCANNER
 from .market_calendar import CALENDARS, latest_complete_session, live_session, session_elapsed, sessions, volume_share
@@ -19,12 +19,16 @@ _busy = threading.Lock()
 def enabled_sources() -> list[str]:
     return (["public_repo", "indices", "macro"] + (["yahoo"] if YAHOO_SCANNER else [])
             + (["kospi", "kosdaq"] if KR_SCANNER else []) + (["crypto"] if CRYPTO_SCANNER else [])
-            + (["massive"] if MASSIVE_API_KEY else []))
+            + (["massive"] if MASSIVE_API_KEY else []) + ["sectors"])
+
+
+# Sources with their own table (the rest are breadth sources, dated by breadth20).
+OWN_TABLE = {"indices": "indices", "macro": "macro", "sectors": "sector_map"}
 
 
 def latest_date(source: str):
-    if source in ("indices", "macro"):
-        df = store.read(source)
+    if source in OWN_TABLE:
+        df = store.read(OWN_TABLE[source])
     else:
         df = store.read("breadth20")
         df = df[df["source"] == source] if len(df) else df
@@ -196,9 +200,10 @@ def scan_hits(source: str, date) -> pd.DataFrame:
 REFRESHERS = {"indices": world.refresh, "macro": macro.refresh, "public_repo": refresh_public,
               "yahoo": lambda: refresh_universe("yahoo"), "kospi": lambda: refresh_universe("kospi"),
               "kosdaq": lambda: refresh_universe("kosdaq"), "crypto": lambda: refresh_universe("crypto"),
-              "massive": refresh_massive}
+              "massive": refresh_massive, "sectors": sectors.refresh}
 # Sources that can carry today's in-progress session (provisional until the close is final).
-LIVE = {"indices": lambda: world.refresh(live=True), "yahoo": lambda: refresh_universe("yahoo", True),
+LIVE = {"indices": lambda: world.refresh(live=True), "sectors": sectors.refresh,
+        "yahoo": lambda: refresh_universe("yahoo", True),
         "kospi": lambda: refresh_universe("kospi", True), "kosdaq": lambda: refresh_universe("kosdaq", True)}
 
 
@@ -232,18 +237,18 @@ def refresh(sources: list[str] | None = None, only_stale: bool = False, live: bo
     try:
         out = {}
         for s in sources or enabled_sources():
-            cals = CALENDARS if s == "indices" else [universes.cal_of(s)]  # indices: US or Korea open
+            cals = CALENDARS if s in ALWAYS else [universes.cal_of(s)]  # indices / sectors: US or Korea open
             if live and s in LIVE and any(live_session(cal=c) for c in cals):
                 out[s] = run(s, live=True)
                 continue
             ld = latest_date(s)
             # indices span many exchanges (e.g. Korea closes before the NYSE session is final),
             # so they are never skipped as "not stale"; the download is a few seconds.
-            # macro follows release schedules, not sessions: refreshed every PERIODIC["macro"].
-            if only_stale and s == "macro":
+            # macro / ETF holdings / reports follow release schedules, not sessions: every PERIODIC[s].
+            if only_stale and s in PERIODIC and s not in ALWAYS:
                 if time.time() - _last_ok(s) < PERIODIC[s]:
                     continue
-            elif (only_stale and s != "indices" and ld is not None
+            elif (only_stale and s not in ALWAYS and ld is not None
                     and ld >= latest_complete_session(cal=universes.cal_of(s)) and not _provisional(s)):
                 continue
             out[s] = run(s)
@@ -268,7 +273,9 @@ def _last_ok(source: str) -> float:
 
 # Refreshed on a timer instead of against the trading calendar: world markets close at
 # different times (indices) and macro series are released on their own schedules.
-PERIODIC = {"indices": 3600, "macro": 6 * 3600}
+PERIODIC = {"indices": 3600, "macro": 6 * 3600, "sectors": 3600}
+# Recomputed on every pass (cheap; they follow several markets' sessions).
+ALWAYS = {"indices", "sectors"}
 
 
 def auto_loop(stop: threading.Event) -> None:
@@ -281,6 +288,8 @@ def auto_loop(stop: threading.Event) -> None:
         stale = [s for s in enabled_sources()
                  if s not in PERIODIC and _behind(s) and time.time() >= retry_at.get(s, 0)]
         stale += [s for s, every in PERIODIC.items() if time.time() - _last_ok(s) >= every]
+        if any(s in universes.UNIVERSES for s in stale) and "sectors" not in stale:
+            stale.append("sectors")  # new bars -> new returns
         if stale:
             refresh(stale)
             for s in (x for x in stale if x not in PERIODIC):
@@ -292,7 +301,7 @@ def auto_loop(stop: threading.Event) -> None:
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser(description="Refresh breadth data (used by Task Scheduler).")
-    ap.add_argument("--source", action="append", help="indices|macro|public_repo|yahoo|kospi|kosdaq|crypto|massive (default: all enabled)")
+    ap.add_argument("--source", action="append", help="indices|macro|public_repo|yahoo|kospi|kosdaq|crypto|massive|sectors (default: all enabled)")
     ap.add_argument("--only-stale", action="store_true")
     ap.add_argument("--live", action="store_true", help="include today's in-progress session for markets now open")
     a = ap.parse_args()

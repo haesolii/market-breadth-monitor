@@ -1,6 +1,7 @@
 "use client";
 import { useMemo, useState } from "react";
 import { DayDetail } from "@/components/DayDetail";
+import { MarketCompare } from "@/components/MarketCompare";
 import { Err, Kpi, Panel, RangePicker, useSource } from "@/components/bits";
 import { TimeChart } from "@/components/TimeChart";
 import { LIVE_MS, useApi, useBench, type Series } from "@/lib/api";
@@ -71,6 +72,8 @@ export default function Overview() {
         </Panel>
         <DayDetail date={sel ?? (last ? String(last.date) : null)} mmSource={mmSrc} />
       </div>
+
+      <MarketCompare />
     </div>
   );
 }

@@ -22,6 +22,8 @@ def test_api_real_rows():
     assert j["source"] == "yahoo" and len(j["rows"]) == 30
     r = c.get("/api/research?metric=bear&threshold=25").json()
     assert r["n_events"] == 5 and r["stats"]["1"]["n"] == 4
+    assert c.get("/api/compare?metric=bear_pct").json()["series"] == {}       # no eligible counts -> no ratio
+    assert c.get("/api/compare?metric=nope").status_code == 400
     day = c.get(f"/api/day?date={d[10]}").json()
     assert day["breadth20"]["yahoo"]["bear_chg5"] == 5 and "r1" not in str(day)  # no forward returns
 

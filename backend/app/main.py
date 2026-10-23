@@ -236,6 +236,33 @@ def _metric_series(metric: str, source: str | None) -> tuple[str, pd.DataFrame]:
     return source, df[["date", metric]].rename(columns={metric: "value"})
 
 
+COMPARE_MARKETS = ("yahoo", "nasdaq", "kospi", "kosdaq", "crypto")
+
+
+@app.get("/api/compare")
+def compare(metric: str = "t2108"):
+    """One size-free breadth reading per market on a shared date axis: T2108, 10-day ratio,
+    Bear as % of eligible stocks, net 4% movers as % of eligible stocks."""
+    if metric not in ("t2108", "ratio10", "bear_pct", "net4_pct"):
+        raise HTTPException(400, "unknown metric")
+    mm, b20 = store.read("market_monitor_daily"), store.read("breadth20")
+    out = {}
+    for s in COMPARE_MARKETS:
+        if metric == "bear_pct":
+            df = b20[b20["source"] == s] if len(b20) else b20
+            v = 100 * df["bear"] / df["elig_20"].where(df["elig_20"] > 0) if len(df) and "elig_20" in df else None
+        else:
+            df = mm[mm["source"] == s] if len(mm) else mm
+            if metric == "net4_pct":
+                v = 100 * (df["up4"] - df["down4"]) / df["elig_daily"].where(df["elig_daily"] > 0) if len(df) else None
+            else:
+                v = df[metric] if len(df) else None
+        if v is not None:
+            d = pd.DataFrame({"date": df["date"], "v": pd.to_numeric(v, errors="coerce")}).dropna().sort_values("date")
+            out[s] = [[str(a), round(float(b), 2)] for a, b in zip(d["date"], d["v"])]
+    return {"metric": metric, "series": out, "labels": {s: SOURCE_INFO[s].get("short", s) for s in out}}
+
+
 def benchmark_prices(symbol: str) -> pd.DataFrame:
     """(date, close) of a symbol in the world-index table."""
     df = store.read("indices")

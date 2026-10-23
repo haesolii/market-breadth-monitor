@@ -68,7 +68,11 @@ cd frontend && npm run dev        :: 또는 npx next start -p 3000 (빌드 후)
 | 10. 액티브 ETF | 국내 주식형 액티브 ETF 상위 60개(채권·금리·커버드콜 제외) + ARK 6개: 일별 구성 종목 스냅샷, 편입/편출/증가/감소 내역, 여러 펀드가 함께 사고판 종목, 펀드별 구성·변화 이력, 종목 당일 등락 |
 | 11. 리포트·실적 | 증권사 기업 리포트(네이버 리서치, 180일): 목표가·이전 목표가 대비 변경·의견·요약, 발간일 반응·이후 수익률·상승여력, 종목별 컨센서스. 미국 실적(Nasdaq): EPS vs 예상, 서프라이즈, 발표 시각별 반응, 발표 예정 14일. 한국 잠정실적(DART, 키 필요): 공시·2일 반응 |
 | 12. 한국 수급 | 오늘 코스피·코스닥 투자자별 순매수, 전 종목(약 2,600개) 외국인·기관·개인 누적 순매수(+코스피 지수), 업종별 5/20일 순매수, 외국인·기관 순매수/순매도 상위 종목(지분율 변화) |
-| 13. 종목 상세 | 종목 검색 → 기간별 수익률·업종 내 순위·시장 백분위, 미국 차트(TradingView), 투자자별 누적 순매수(한국), 같은 업종 대형주, 액티브 ETF 보유·매매, 증권사 리포트·컨센서스, 잠정실적/실적 |
+| 13. 종목 상세 | 종목 검색 → 기간별 수익률·업종 내 순위·시장 백분위, 미국 차트(TradingView), 투자자별 누적 순매수(한국), 같은 업종 대형주, 액티브 ETF 보유·매매, 증권사 리포트·컨센서스, 잠정실적/실적, ☆ 관심종목 추가 |
+| 14. 주도주·추세 | Qullamaggie 방식: 지수의 10·20일선 추세 판정, 10·20·50일선 위 종목 비율, 52주 신고가·신저가, 주도주(3개월 수익률 상위 2%)의 10·20일선 위 비율, 오늘의 주도주 목록 (5개 시장) |
+| 15. 관심종목 | 관심종목 목록·수익률, 종목별 소식(리포트, ETF 매매, 외국인·기관 대량 매매, 잠정실적, 실적·IR 예정, ±5% 급등락), 텔레그램 알림 |
+| 16. 일정 캘린더 | 미국 매크로(BEA: GDP·PCE·무역, FRED 키 있으면 CPI·고용·PPI·소매판매·JOLTS), FOMC, 미국 실적(시총 필터), 한국 IR(DART 기업설명회 공시) |
+| 17. 변동성·선물 구조 | VIX 기간구조(9일~1년)와 VIX/VIX3M, VIX 선물 곡선(CBOE)·2번째/1번째 월물, 주가지수 선물 베이시스(ES·NQ·RTY·YM·코스피 200), WTI 원유 선물 곡선, VVIX·VXN |
 | 데이터 관리 (`/data`, 메뉴 숨김 · 상태바 오류 링크) | 소스 상태·오류·수동 갱신, 원본 수치(TC2000/원본) 입력 비교, 데이터 품질 리포트, 로그 |
 
 종합 화면 맨 위에는 최신 AI 시장 브리핑(접힘), 맨 아래에는 시장 간 비교 차트가 있다. 매크로 화면 아래에는 최근 발표와 발표일 S&P 500·10년물 반응이 있다.
@@ -110,6 +114,10 @@ stockbee-breadth/
 │   ├── flows.py             한국 투자자별 순매수 (네이버)
 │   ├── dart.py              한국 잠정실적 공시 (DART, DART_API_KEY)
 │   ├── stock.py             종목 상세·검색 (모든 데이터 묶음)
+│   ├── leaders.py           주도주·이동평균 위 비율·신고가/신저가·지수 추세 (Qullamaggie)
+│   ├── watch.py             관심종목·소식·텔레그램 알림
+│   ├── calendar_.py         일정 캘린더 (BEA·FOMC·FRED·DART IR)
+│   ├── term.py              변동성·선물 기간구조 (VIX·CBOE VX·지수 선물 베이시스·원유)
 │   ├── brief.py             AI 시장 브리핑 (Claude, `python -m app.brief`)
 │   ├── report.py            텔레그램: 일일 보고, 시장 폭 신호(`--signals`), 브리핑(`--brief`), 경보
 │   ├── publish.py · remote.py · usage.py   Supabase 게시/읽기, 방문 기록 (배포용)
@@ -128,14 +136,14 @@ stockbee-breadth/
 
 주요 테이블 (`data/*.parquet`): `breadth20`, `market_monitor_daily`, `bars_yahoo`, `universe_yahoo`,
 `universe_massive`, `bars_kospi`, `bars_kosdaq`, `universe_kospi`, `universe_kosdaq`, `bars_crypto`, `universe_crypto`, `manual_reference`, `indices`(세계 지수 종가), `macro`, `macro_releases`,
-`sector_map`, `etf_snapshots`·`etf_latest`·`etf_changes`·`etf_funds`, `analyst_reports`, `earnings`, `ai_brief`, `sector_daily`(섹터 일간 수익률·40일선 위 비율), `kr_flow`, `kr_flow_market`, `dart_prelim`, `massive/<date>.parquet`(원본 일봉 캐시). 지수 목록: `data/indices.json`.
+`sector_map`, `etf_snapshots`·`etf_latest`·`etf_changes`·`etf_funds`, `analyst_reports`, `earnings`, `ai_brief`, `sector_daily`(섹터 일간 수익률·40일선 위 비율), `kr_flow`, `kr_flow_market`, `dart_prelim`, `leaders_breadth`·`leaders_list`, `econ_calendar`, `kr_ir`, `vol_index`, `vix_futures`, `futures_basis`, `crude_curve`, `massive/<date>.parquet`(원본 일봉 캐시). 지수 목록: `data/indices.json`.
 
 ## 5-1. 배포 (선택)
 
 - **GitHub Actions** (`.github/workflows/refresh.yml`): 수집·계산 후 Supabase에 게시. 장중에는 한 번 실행이 5분마다 잠정값을 갱신하고, 미국(23:15 UTC)·한국(09:40 UTC) 마감 후 확정.
-  섹터·지수는 매 회, 매크로 30분, 리포트 1시간, ETF 3시간, 실적 6시간, 수급·DART 30분마다.
+  섹터·지수는 매 회, 매크로 30분, 리포트 1시간, ETF 3시간, 실적 6시간, 수급·DART·주도주·변동성 30분, 실적 1시간, 일정 6시간마다. 종목별 수급은 18시(KST) 이후 하루 한 번.
 - **Vercel**: `vercel.json` services (frontend + backend), 읽기 전용 API가 Supabase를 읽음. 배포는 `vercel deploy --prod` (push로 자동 배포되지 않음).
-- **Secrets**: `SUPABASE_DB_URL`, `TELEGRAM_BOT_TOKEN`(+선택 `TELEGRAM_CHAT_ID`), `ANTHROPIC_API_KEY`(AI 브리핑, 없으면 건너뜀), `DART_API_KEY`(잠정실적, 선택), `MASSIVE_API_KEY`(선택). Vercel: `DASHBOARD_PASSWORD`, `STORE=supabase`.
+- **Secrets**: `SUPABASE_DB_URL`, `TELEGRAM_BOT_TOKEN`(+선택 `TELEGRAM_CHAT_ID`), `ANTHROPIC_API_KEY`(AI 브리핑, 없으면 건너뜀), `DART_API_KEY`(잠정실적·한국 IR, 선택), `FRED_API_KEY`(CPI·고용 발표일, 선택), `MASSIVE_API_KEY`(선택). Vercel: `DASHBOARD_PASSWORD`, `STORE=supabase`.
 - 텔레그램: 마감 후 시장 폭 극단값(Bear·4% 하락 극단 기준, 10일 비율 ≤0.5/≥2, T2108 <20/>80)이 **새로** 나타나면 알림, 아침 일일 보고, 브리핑.
 - 다시 받을 수 없는 누적 이력(ETF 변화·실적 발표 시각·매크로 발표·브리핑·시장 전체 수급)은 러너 캐시가 지워지면 Supabase에서 복원한다.
 
@@ -172,6 +180,10 @@ cd frontend && npx tsc --noEmit && npm run build
 - 한국 수급의 시장 전체 값은 네이버가 당일 값만 주므로 수집 시작일부터 쌓이고, 종목별 누적은 순매수 주식 수 × 그날 종가로 환산한 근사치이며 매일 18시(KST) 이후 하루 한 번 갱신 (배포 API는 게시 때 미리 계산한 요약과 종목별 DB 조회를 씀).
 - 종합 점수는 각 지표의 최근 1년 백분위 평균(하락형 지표는 뒤집음)으로 만든 자체 지표이며 매매 신호가 아니다. 섹터 지수·RRG는 현재 구성 종목·현재 시가총액 기준 근사(상장폐지 종목 없음, JdK RRG 공식 비공개).
 - 월간 50% 상승·하락의 원문 기준(미국 20)은 어느 시장에서나 약 75%의 날에 충족돼 극단값이 아니다. 그래서 '과열'·'극단적 하락' 판정은 시장별 자체 90백분위(2021-10~2026-10 측정)를 쓰고, 원문 기준은 '평소 수준'으로 표시.
+- 주도주 화면의 변동폭은 종가만 있는 데이터라 종가 대비 등락 평균으로 근사 (Qullamaggie의 고가·저가 기준 ADR의 약 0.6~0.7배).
+- 미국 CPI·고용 등 BLS 발표 일정은 BLS가 스크립트 접근을 막아 FRED 키가 있어야 표시. 한국 실적 일정은 IR 공시를 낸 종목만 (중소형주는 IR 없이 공시하는 경우가 많음).
+- 지수 선물 베이시스는 Yahoo 연속 근월물(만기 교체일에 튐)과 현물 종가의 시각 차이 때문에 일별 값이 근사치. VKOSPI는 무료 경로를 찾지 못해 없음.
+- 관심종목 목록은 갱신 작업 시작 때 읽으므로, 장중 연속 갱신(최대 5시간 반) 도중 바꾼 목록은 다음 실행부터 알림에 반영.
 - 증권사 리포트·섹터·ETF·수급은 네이버/WiseReport 비공식 엔드포인트라 예고 없이 바뀔 수 있음.
 - AI 브리핑은 대시보드 수치만 근거로 쓰도록 지시하지만 요약·해석이 틀릴 수 있다. 투자 권유 아님.
 - Yahoo 비공식 API는 예고 없이 바뀔 수 있음 (실패 시 기존 데이터 유지, 오류 표시).

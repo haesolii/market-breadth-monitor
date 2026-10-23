@@ -26,6 +26,7 @@ jobs:
     env:
       HAS_SUPABASE: ${{ secrets.SUPABASE_DB_URL != '' }}
       HAS_TELEGRAM: ${{ secrets.TELEGRAM_BOT_TOKEN != '' }}
+      HAS_ANTHROPIC: ${{ secrets.ANTHROPIC_API_KEY != '' }}
     defaults:
       run:
         working-directory: backend
@@ -78,6 +79,22 @@ jobs:
             sleep $(( 300 - $(date +%s) % 300 ))
           done
           [ $fails -eq 0 ]
+
+      # After each market's final run (US: 23:15 UTC, Korea: 09:40 UTC) or a manual run: Claude
+      # writes a brief from the published numbers, then it is published and sent to Telegram.
+      - name: AI brief
+        if: success() && env.HAS_ANTHROPIC == 'true' && (github.event.schedule == '15 23 * * *' || github.event.schedule == '40 9 * * *' || github.event_name == 'workflow_dispatch')
+        continue-on-error: true
+        env:
+          DATA_DIR: ${{ github.workspace }}/data
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          python -m app.brief --slot ${{ github.event.schedule == '40 9 * * *' && 'kr' || 'us' }}
+          if [ "$HAS_SUPABASE" = true ]; then python -m app.publish; fi
+          if [ "$HAS_TELEGRAM" = true ]; then python -m app.report --brief; fi
 
       # Breadth extremes newly reached on a final session (deduped per source and session).
       - name: Signal alerts

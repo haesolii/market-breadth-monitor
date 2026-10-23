@@ -2,6 +2,7 @@
 import { useMemo, useState } from "react";
 import { DayDetail } from "@/components/DayDetail";
 import { MarketCompare } from "@/components/MarketCompare";
+import { Brief } from "@/components/Brief";
 import { Err, Kpi, Panel, RangePicker, useSource } from "@/components/bits";
 import { TimeChart } from "@/components/TimeChart";
 import { LIVE_MS, useApi, useBench, type Series } from "@/lib/api";
@@ -45,6 +46,7 @@ export default function Overview() {
   return (
     <div className="space-y-3">
       <Err error={b.error} />
+      <Brief compact />
       <Panel title="20% 급등락 (20% Bull/Bear Study) — 최신" right={<>{srcSel}</>}>
         <div className="grid grid-cols-2 gap-2 md:grid-cols-5">
           <Kpi label="Bull Count (20% 급등)" value={fmt(bull)} tone="up" sub={`전일 대비 ${delta(bull, n(prev?.bull))}`} />

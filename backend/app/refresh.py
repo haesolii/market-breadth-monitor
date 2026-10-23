@@ -275,7 +275,7 @@ def _last_ok(source: str) -> float:
 
 # Refreshed on a timer instead of against the trading calendar: world markets close at
 # different times (indices) and macro series are released on their own schedules.
-PERIODIC = {"indices": 3600, "macro": 6 * 3600, "sectors": 3600, "etf": 3 * 3600,
+PERIODIC = {"indices": 3600, "macro": 1800, "sectors": 3600, "etf": 3 * 3600,
             "analyst": 3600, "earnings": 6 * 3600}
 # Recomputed on every pass (cheap; they follow several markets' sessions).
 ALWAYS = {"indices", "sectors"}

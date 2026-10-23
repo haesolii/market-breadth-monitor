@@ -13,7 +13,7 @@ from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-from . import analyst, earnings, etf, indicators, macro, refresh, remote, research, sectors, store, universes, usage, validation, world
+from . import analyst, brief, earnings, etf, indicators, macro, refresh, remote, research, sectors, store, universes, usage, validation, world
 from .config import MASSIVE_API_KEY, REFRESH_INTERVAL_MIN, YAHOO_SCANNER
 from .indicators import MM_COLS
 from .market_calendar import CALENDARS, latest_complete_session
@@ -446,6 +446,16 @@ def earnings_view(back: int = Query(7, ge=1, le=120), ahead: int = Query(14, ge=
 def macro_summary():
     st = store.status()["sources"].get("macro", {})
     return {**macro.summary(), "last_success": st.get("last_success"), "last_error": st.get("last_error")}
+
+
+@app.get("/api/macro/releases")
+def macro_releases(days: int = Query(45, ge=1, le=730)):
+    return macro.releases(days)
+
+
+@app.get("/api/brief")
+def ai_brief(n: int = Query(7, ge=1, le=60)):
+    return brief.latest(n)
 
 
 @app.get("/api/macro/history")

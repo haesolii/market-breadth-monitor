@@ -14,6 +14,7 @@ import requests
 
 from . import store
 from .collectors import http_session
+from .market_calendar import ET
 
 FRED_CSV = "https://fred.stlouisfed.org/graph/fredgraph.csv"
 
@@ -43,6 +44,8 @@ SERIES = {
     "NFCI": ("금융여건지수 (시카고 연은)", "유동성", "level", "", "down"),
 }
 GROUP_ORDER = ["물가", "고용", "금리·신용", "경기", "유동성"]
+# Scheduled monthly / weekly releases tracked as events (daily market series are not "releases").
+RELEASES = ["CPIAUCSL", "CPILFESL", "PCEPILFE", "UNRATE", "PAYEMS", "ICSA", "SAHMREALTIME", "INDPRO", "RSAFS", "UMCSENT"]
 
 
 def _session():
@@ -90,10 +93,58 @@ def refresh() -> dict:
         raise RuntimeError("all FRED downloads failed: " + "; ".join(failed[:5]))
     new = pd.concat(frames, ignore_index=True)
     keep = old[old["series"].isin(SERIES) & ~old["series"].isin(new["series"])] if len(old) else old
+    if len(old):
+        record_releases(old, new)
     store.write("macro", pd.concat([keep, new], ignore_index=True).sort_values(["series", "date"]))
     if failed:
         store.log("warn", "macro", "; ".join(failed))
     return {"latest_date": str(new["date"].max()), "series": len(frames), "failed": len(failed)}
+
+
+def record_releases(old: pd.DataFrame, new: pd.DataFrame, now: dt.datetime | None = None) -> pd.DataFrame:
+    """A tracked series whose latest observation moved forward was just released: store
+    (series, observation, value, previous value, detection time). FRED keeps no release
+    timestamps in its keyless CSV, so the release is dated by when this refresh first saw it."""
+    now = now or dt.datetime.now(dt.timezone.utc)
+    rows = []
+    for sid in RELEASES:
+        o, n = old[old["series"] == sid], new[new["series"] == sid]
+        if o.empty or n.empty or max(n["date"]) <= max(o["date"]):
+            continue
+        s = display_series(n, sid)
+        if len(s) < 2:
+            continue
+        rows.append({"series": sid, "obs_date": s.index[-1], "value": float(s.iloc[-1]), "prev": float(s.iloc[-2]),
+                     "detected_at": now.isoformat(timespec="minutes"), "date": now.astimezone(ET).date()})
+    df = pd.DataFrame(rows)
+    if len(df):
+        store.upsert("macro_releases", df, ["series", "obs_date"])
+    return df
+
+
+def releases(days: int = 45) -> list[dict]:
+    """Recent releases with the market's move on the release day: S&P 500 % and US 10-year yield
+    in bp, close of the first session on/after the release vs the session before."""
+    rel = store.read("macro_releases")
+    if rel.empty:
+        return []
+    rel = rel[pd.to_datetime(rel["date"]).dt.date >= dt.date.today() - dt.timedelta(days=days)]
+    idx = store.read("indices")
+    out = []
+    for r in rel.sort_values("detected_at", ascending=False).itertuples():
+        name, group, _t, unit, good = SERIES[r.series]
+        row = {"series": r.series, "name": name, "group": group, "unit": unit, "good": good, "obs_date": str(r.obs_date),
+               "value": r.value, "prev": r.prev, "chg": r.value - r.prev, "date": str(r.date), "detected_at": r.detected_at}
+        for sym, key, bp in (("^GSPC", "spx", False), ("^TNX", "us10y", True)):
+            s = idx[idx["symbol"] == sym].sort_values("date") if len(idx) else idx
+            d = pd.to_datetime(s["date"]).dt.date.to_numpy() if len(s) else []
+            i = int(pd.Index(d).searchsorted(pd.Timestamp(r.date).date())) if len(d) else 0
+            if 0 < i < len(d):
+                a, b = float(s["close"].iloc[i - 1]), float(s["close"].iloc[i])
+                row[key] = (b - a) * 100 if bp else (b / a - 1) * 100
+                row["react_date"] = str(d[i])
+        out.append(row)
+    return out
 
 
 def display_series(raw: pd.DataFrame, sid: str) -> pd.Series:

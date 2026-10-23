@@ -12,6 +12,7 @@ import datetime as dt
 import html
 import math
 import os
+import re
 
 import pandas as pd
 import requests
@@ -183,6 +184,19 @@ def signals() -> str | None:
     return "\n".join(["🔔 <b>시장 폭 신호</b> (기본 강조 기준, 매매 신호 아님)", *lines]) if lines else None
 
 
+def brief_text() -> str | None:
+    """Latest AI brief as Telegram HTML (headings bold; Telegram caps a message at 4096 chars)."""
+    from . import brief
+
+    rows = brief.latest(1)
+    if not rows:
+        return None
+    body = re.sub(r"^#+\s*(.+)$", r"<b>\1</b>", html.escape(rows[0]["text"]), flags=re.M)
+    body = re.sub(r"\*\*(.+?)\*\*", r"\1", body)
+    head = f"🧠 <b>AI 시장 브리핑</b> · {rows[0]['date']} ({'미국 마감' if rows[0]['slot'] == 'us' else '한국 마감'})\n\n"
+    return (head + body)[:4000]
+
+
 def daily() -> str:
     today = dt.datetime.now(KST).strftime("%Y-%m-%d")
     parts = [f"<b>📊 시장 폭 모니터 · {today}</b>", "", *usage_lines(), "", "<b>데이터</b>", *data_lines()]
@@ -197,9 +211,10 @@ if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--alert")
     ap.add_argument("--signals", action="store_true")
+    ap.add_argument("--brief", action="store_true", help="send the latest AI brief")
     ap.add_argument("--print", action="store_true", help="print instead of sending")
     a = ap.parse_args()
-    text = f"🚨 <b>시장 폭 모니터</b>\n{html.escape(a.alert)}" if a.alert else signals() if a.signals else daily()
+    text = f"🚨 <b>시장 폭 모니터</b>\n{html.escape(a.alert)}" if a.alert else signals() if a.signals else brief_text() if a.brief else daily()
     if not text:
         print("no new signals")
     elif a.print or not TOKEN:

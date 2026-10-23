@@ -2,6 +2,7 @@
 import dynamic from "next/dynamic";
 import { useMemo, useState } from "react";
 import { Err, Panel, Select } from "@/components/bits";
+import { Releases } from "@/components/Brief";
 import { localTime } from "@/components/Shell";
 import { TimeChart } from "@/components/TimeChart";
 import { useApi, useBench, type Series } from "@/lib/api";
@@ -130,6 +131,7 @@ export default function MacroPage() {
           출처: FRED (세인트루이스 연은) · 월간 지표는 해당 월 기준값(다음 달 발표) · 변화 색상: 경제에 좋은 방향 = 녹색, 나쁜 방향 = 빨간색, 중립 지표 = 회색 · 카드를 누르면 큰 차트 · 참고용이며 매매 신호가 아닙니다.
         </div>
       </Panel>
+      <Releases />
     </div>
   );
 }

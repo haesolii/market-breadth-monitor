@@ -1,5 +1,5 @@
 .env
-data/
+/data/
 backend/.venv/
 __pycache__/
 *.pyc
@@ -7,3 +7,4 @@ logs/
 
 .vercel
 .env.local
+*.out

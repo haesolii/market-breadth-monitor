@@ -24,6 +24,7 @@ const MENU = [
   ["/calendar", "16. 일정 캘린더", "Earnings & Macro Calendar"],
   ["/term", "17. 변동성·선물 구조", "Volatility & Futures Curve"],
   ["/news", "18. 뉴스", "News"],
+  ["/community", "19. 게시판", "Community Board"],
 ];
 
 export const localTime = (iso?: string | null) => (iso ? new Date(iso).toLocaleString("ko-KR", { hour12: false }) : "—");
@@ -117,7 +118,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
             <li key={href}>
               <Link
                 href={href}
-                className={`block whitespace-nowrap rounded px-3 py-2 text-sm ${path === href ? "bg-zinc-800 text-white" : "text-zinc-400 hover:bg-zinc-900"}`}
+                className={`block whitespace-nowrap rounded px-3 py-2 text-sm ${path === href || (href === "/community" && path.startsWith("/community")) ? "bg-zinc-800 text-white" : "text-zinc-400 hover:bg-zinc-900"}`}
               >
                 {ko}
                 <div className="text-[10px] text-zinc-500">{en}</div>

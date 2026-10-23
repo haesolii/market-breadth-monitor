@@ -13,7 +13,7 @@ from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-from . import analyst, brief, calendar_, dart, earnings, etf, flows, kr_funds, leaders, news, term, watch, indicators, macro, refresh, remote, research, sectors, stock, store, universes, usage, validation, world
+from . import analyst, board, brief, calendar_, dart, earnings, etf, flows, kr_funds, leaders, news, term, watch, indicators, macro, refresh, remote, research, sectors, stock, store, universes, usage, validation, world
 from .config import MASSIVE_API_KEY, REFRESH_INTERVAL_MIN, YAHOO_SCANNER
 from .indicators import MM_COLS
 from .market_calendar import CALENDARS, latest_complete_session
@@ -39,6 +39,7 @@ async def lifespan(_app):
 
 app = FastAPI(title="Market Breadth Monitor", lifespan=lifespan)
 app.add_middleware(CORSMiddleware, allow_origins=["http://localhost:3000"], allow_methods=["*"], allow_headers=["*"])
+app.include_router(board.router)
 
 # Same single-user password gate as the frontend (cookie set by /auth/login); off when unset (local use).
 _PW = os.getenv("DASHBOARD_PASSWORD", "")
@@ -60,6 +61,7 @@ async def require_login(request: Request, call_next):
     # carrying the right key are cacheable; anything else misses and reaches the check above.
     key = request.headers.get("x-mb-key", "")
     if (remote.ON and request.method == "GET" and res.status_code == 200 and request.url.path not in NO_CDN
+            and not request.url.path.startswith("/api/board")  # per-user answers and live counts
             and (not _TOKEN or hmac.compare_digest(key, _TOKEN))):
         ttl, swr = CDN_TTL.get(request.url.path, (60, 60))
         res.headers["Vercel-CDN-Cache-Control"] = f"max-age={ttl}, stale-while-revalidate={swr}"

@@ -41,6 +41,23 @@ function ByName({ q }: { q: string }) {
   return data && !data.length ? <div className="text-sm text-zinc-500">&lsquo;{q}&rsquo;에 해당하는 종목이 없습니다.</div> : null;
 }
 
+type TalkRow = { id: number; title: string; nick: string; member: boolean; ip_prefix: string; created_at: string; comments: number; likes: number };
+
+/** Board posts that mention $TICKER. */
+function Talk({ ticker, name }: { ticker: string; name: string }) {
+  const { data } = useApi<{ rows: TalkRow[]; total: number }>(`/api/board/posts?ticker=${encodeURIComponent(ticker)}`);
+  return (
+    <Panel title={`${name} 토론 ${data?.total ?? ""}`} right={<Link href="/community/write?b=stock" className="rounded bg-sky-700 px-3 py-1 text-xs text-white">글쓰기</Link>}>
+      {!data?.rows.length ? <div className="text-xs text-zinc-500">아직 이 종목 이야기가 없습니다. 글에 ${"$"}{ticker} 를 넣으면 여기에 모입니다.</div> : data.rows.map((r) => (
+        <Link key={r.id} href={`/community/post?id=${r.id}`} className="flex gap-3 border-t border-zinc-900 py-2 text-sm hover:bg-zinc-900/60">
+          <span className="min-w-0 flex-1 truncate text-zinc-100">{r.title}{r.comments > 0 && <span className="ml-1 text-xs text-sky-400">[{r.comments}]</span>}</span>
+          <span className="shrink-0 text-xs text-zinc-500">{r.member ? `${r.nick} ✔` : `${r.nick}(${r.ip_prefix})`} · 추천 {r.likes}</span>
+        </Link>
+      ))}
+    </Panel>
+  );
+}
+
 function Detail({ t, m }: { t: string; m: string }) {
   const { data: d, error } = useApi<D>(`/api/stock?ticker=${encodeURIComponent(t)}${m ? `&market=${m}` : ""}`);
   const [tab, setTab] = useState("chart");
@@ -71,7 +88,7 @@ function Detail({ t, m }: { t: string; m: string }) {
         ["chart", "차트"], ...(flow ? [["flow", "투자자 수급"] as [string, string]] : []), ["news", "뉴스"],
         ...(d.analyst ? [["reports", "증권사 리포트", d.analyst.rows.length] as [string, string, number]] : []),
         [kr(d.market) ? "dart" : "earnings", kr(d.market) ? "잠정실적 공시" : "실적 발표", kr(d.market) ? d.dart.length : d.earnings.length],
-        ["etf", "액티브 ETF", d.etf.holders.length], ["peers", "같은 업종"],
+        ["etf", "액티브 ETF", d.etf.holders.length], ["peers", "같은 업종"], ["talk", "토론"],
       ]} />
 
       {tab === "chart" && (tv ? <Panel><TVChart symbol={tv} height={520} /></Panel> : flow && d.flow ? (
@@ -90,6 +107,8 @@ function Detail({ t, m }: { t: string; m: string }) {
       )}
 
       {tab === "news" && <Panel title={`${d.name} 뉴스`}><StockNews ticker={d.ticker} market={d.market} /></Panel>}
+
+      {tab === "talk" && <Talk ticker={d.ticker} name={d.name} />}
 
       {tab === "peers" && (
         <Panel title={`같은 업종 대형주 (${d.sector})`}>

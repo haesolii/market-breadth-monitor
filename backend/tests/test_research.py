@@ -35,3 +35,15 @@ def test_calendar_thread_safe():
     with cf.ThreadPoolExecutor(8) as ex:
         res = list(ex.map(lambda c: mc.latest_complete_session(cal=c), ["XKRX", "NYSE"] * 8))
     assert all(isinstance(r, dt.date) for r in res)
+
+
+def test_and_condition_and_excursions():
+    s = spy()
+    series = pd.DataFrame({"date": s["date"], "value": [0] * 40, "value2": [50] * 40})
+    series.loc[[5, 6, 7], "value"] = 200
+    series.loc[[6], "value2"] = 10
+    res = research.study(series, s, 100, ">=", "independent", op2="<=", threshold2=20)
+    assert res["n_events"] == 1 and res["events"][0]["value2"] == 10
+    ev = res["events"][0]                                   # rising index: worst close is the next day
+    assert round(ev["mae20"], 6) == round((107 / 106 - 1) * 100, 6) and round(ev["mfe20"], 6) == round((126 / 106 - 1) * 100, 6)
+    assert research.study(series, s, 100, ">=")["n_events"] == 3   # no value2 threshold -> single condition

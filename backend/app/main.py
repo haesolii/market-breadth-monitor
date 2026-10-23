@@ -209,20 +209,31 @@ def day(date: dt.date, source: str | None = None, mm_source: str | None = None):
 @app.get("/api/research")
 def research_study(source: str | None = None, metric: str = "bear", threshold: float = 100, op: str = ">=",
                    mode: str = "independent", gap: int = Query(5, ge=1, le=60),
-                   start: dt.date | None = None, end: dt.date | None = None, benchmark: str | None = None):
-    table = "breadth20" if metric in ("bull", "bear") else "market_monitor_daily"
-    if table == "market_monitor_daily" and metric not in MM_COLS:
-        raise HTTPException(400, "unknown metric")
-    source, df = table_for(table, source if source in available(table) else None)
-    s = df[["date", metric]].rename(columns={metric: "value"})
+                   start: dt.date | None = None, end: dt.date | None = None, benchmark: str | None = None,
+                   metric2: str | None = None, op2: str = ">=", threshold2: float | None = None):
+    """metric2 / op2 / threshold2: optional second condition (AND), read from the same market."""
+    source, s = _metric_series(metric, source)
+    if metric2 and threshold2 is not None:
+        _, s2 = _metric_series(metric2, source)
+        s = s.merge(s2.rename(columns={"value": "value2"}), on="date", how="inner")
     if start:
         s = s[s["date"] >= start]
     if end:
         s = s[s["date"] <= end]
     benchmark = benchmark or universes.benchmark_of(source)
-    res = research.study(s, benchmark_prices(benchmark), threshold, op, mode, gap)
+    res = research.study(s, benchmark_prices(benchmark), threshold, op, mode, gap, op2, threshold2 if metric2 else None)
     return {"source": source, "metric": metric, "threshold": threshold, "op": op, "mode": mode, "gap": gap,
-            "benchmark": benchmark, **res}
+            "metric2": metric2, "op2": op2, "threshold2": threshold2, "benchmark": benchmark, **res}
+
+
+def _metric_series(metric: str, source: str | None) -> tuple[str, pd.DataFrame]:
+    """(source, date/value frame) of one indicator; a source missing from the indicator's table
+    (e.g. Bear of a market whose monitor is computed elsewhere) falls back to that table's default."""
+    table = "breadth20" if metric in ("bull", "bear") else "market_monitor_daily"
+    if table == "market_monitor_daily" and metric not in MM_COLS:
+        raise HTTPException(400, "unknown metric")
+    source, df = table_for(table, source if source in available(table) else None)
+    return source, df[["date", metric]].rename(columns={metric: "value"})
 
 
 def benchmark_prices(symbol: str) -> pd.DataFrame:

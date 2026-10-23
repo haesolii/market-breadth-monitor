@@ -13,7 +13,7 @@ from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-from . import indicators, macro, refresh, remote, research, sectors, store, universes, usage, validation, world
+from . import etf, indicators, macro, refresh, remote, research, sectors, store, universes, usage, validation, world
 from .config import MASSIVE_API_KEY, REFRESH_INTERVAL_MIN, YAHOO_SCANNER
 from .indicators import MM_COLS
 from .market_calendar import CALENDARS, latest_complete_session
@@ -136,7 +136,7 @@ def status():
            "expected_sessions": {c: str(latest_complete_session(cal=c)) for c in ("NYSE", "XKRX")},
            "final_hours": {c: h for c, (_, h) in CALENDARS.items()}, "refresh_min": REFRESH_INTERVAL_MIN}
     enabled = refresh.enabled_sources()
-    for s in ["indices", "macro", "public_repo", "yahoo", "nasdaq", "kospi", "kosdaq", "crypto", "massive", "sectors"]:
+    for s in ["indices", "macro", "public_repo", "yahoo", "nasdaq", "kospi", "kosdaq", "crypto", "massive", "sectors", "etf"]:
         ld = refresh.latest_date(s)
         derived = universes.UNIVERSES.get(s, {}).get("derived_from")
         out["sources"][s] = {**st["sources"].get(s, {}), "latest_date": str(ld) if ld else None,
@@ -409,6 +409,18 @@ def sector_map(market: str = "yahoo", period: str = "r1d", leaves: int = Query(8
     if period not in sectors.PERIODS or market not in (*sectors.MARKETS, "nasdaq"):
         raise HTTPException(400, "unknown market or period")
     return sectors.summary(market, period, leaves)
+
+
+# ---- active ETF holdings ------------------------------------------------------------
+@app.get("/api/etf")
+def etf_overview(days: int = Query(7, ge=1, le=90)):
+    st = store.status()["sources"].get("etf", {})
+    return {**etf.overview(days), "last_success": st.get("last_success"), "last_error": st.get("last_error")}
+
+
+@app.get("/api/etf/holdings")
+def etf_holdings(etf_code: str = Query(..., alias="etf")):
+    return etf.holdings(etf_code)
 
 
 # ---- macro (FRED) ---------------------------------------------------------------

@@ -15,6 +15,7 @@ const MENU = [
   ["/macro", "7. 매크로", "Macro"],
   ["/board", "8. 차트 보드", "Chart Board"],
   ["/sectors", "9. 섹터 히트맵", "Sector Heatmap"],
+  ["/etf", "10. 액티브 ETF", "Active ETF Holdings"],
 ];
 
 export const localTime = (iso?: string | null) => (iso ? new Date(iso).toLocaleString("ko-KR", { hour12: false }) : "—");

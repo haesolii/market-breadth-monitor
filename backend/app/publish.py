@@ -15,7 +15,8 @@ import pandas as pd
 from . import refresh, remote, store, universes, validation, world
 from .config import DATA
 
-TABLES = ["breadth20", "market_monitor_daily", "indices", "macro", "sector_map"]
+TABLES = ["breadth20", "market_monitor_daily", "indices", "macro", "sector_map", "etf_latest", "etf_changes", "etf_funds"]
+RESTORE = {"etf_changes": "etf_changes", "etf_snapshots": "etf_latest"}  # local table <- published table
 SCAN_SESSIONS = 20  # recent sessions of per-ticker scan results kept for the dashboard
 
 
@@ -38,6 +39,13 @@ def pull_config() -> None:
     if items:
         (DATA / "indices.json").write_text(json.dumps(items, ensure_ascii=False, indent=1), "utf-8")
         print(f"indices list from Supabase: {len(items)} symbols")
+    # Accumulated history that cannot be re-downloaded: restore it when the runner's data cache is gone.
+    for local, published in RESTORE.items():
+        if store.read(local).empty:
+            df = remote.read_table(published)
+            if len(df):
+                store.write(local, df)
+                print(f"{local}: restored {len(df):,} rows from {published}")
 
 
 def publish() -> None:

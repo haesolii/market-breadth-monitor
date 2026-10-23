@@ -74,7 +74,7 @@ def test_admin_tools_only_for_admins(monkeypatch):
     monkeypatch.setattr(board, "ADMINS", {"boss2"})
     guest, member, admin = _c("3.3.3.1"), _c("3.3.3.2"), _c("3.3.3.3")
     member.post("/api/board/signup", json={"username": "plain1", "nickname": "일반", "password": "password1"})
-    admin.post("/api/board/signup", json={"username": "boss2", "nickname": "운영자", "password": "password1"})
+    admin.post("/api/board/signup", json={"username": "boss2", "nickname": "운영자2", "password": "password1"})
     pid = member.post("/api/board/posts", json={"board": "free", "title": "t", "body": "b"}).json()["id"]
     for c in (guest, member):
         assert c.get("/api/board/admin/reports").status_code == 403

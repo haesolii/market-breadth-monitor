@@ -94,3 +94,19 @@ def test_ids_and_nicknames_unique_ignoring_case_and_spaces(monkeypatch):
     g = _c("4.4.4.5")
     r = g.post("/api/board/posts", json={"board": "free", "title": "t", "body": "b", "nick": "주식 왕", "password": "1234"})
     assert r.status_code == 400                                                              # guests can't wear a member's name
+
+
+def test_owner_only_changes_on_deployed_site(monkeypatch):
+    """On the public deployed API a visitor cannot change shared settings or see the owner's watchlist."""
+    from app import main, remote
+    monkeypatch.setattr(remote, "ON", True)
+    monkeypatch.setattr(board, "is_admin", lambda request: False)
+    c = _c("6.6.6.6")
+    assert c.post("/api/watchlist", json=[]).status_code == 403
+    assert c.post("/api/reference", json={"date": "2024-01-02", "metric": "bear", "value": 1}).status_code == 403
+    assert c.delete("/api/reference?date=2024-01-02&metric=bear").status_code == 403
+    assert c.post("/api/world/config", json=[]).status_code == 403
+    assert c.get("/api/watchlist").json() == {"items": [], "events": [], "owner": False}
+    assert c.get("/api/news/watch").json() == []
+    monkeypatch.setattr(board, "is_admin", lambda request: True)
+    assert main._is_owner(None) is True

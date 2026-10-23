@@ -224,6 +224,14 @@ class Who:
         self.admin = bool(self.user and self.user["username"].lower() in ADMINS)
 
 
+def is_admin(request: Request) -> bool:
+    """Signed in on the board as an admin (BOARD_ADMINS)."""
+    if not request.cookies.get("bd_session"):
+        return False
+    with tx() as t:
+        return Who(t, request).admin
+
+
 def _public(row: dict, who: Who | None = None) -> dict:
     """Never expose full IPs or password hashes; guests are shown with their IP prefix."""
     out = {k: v for k, v in row.items() if k not in ("ip", "pw")}

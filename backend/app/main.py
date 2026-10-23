@@ -64,6 +64,7 @@ async def require_login(request: Request, call_next):
     key = request.headers.get("x-mb-key", "")
     if (remote.ON and request.method == "GET" and res.status_code == 200 and request.url.path not in NO_CDN
             and not request.url.path.startswith("/api/board")  # per-user answers and live counts
+            and request.url.path not in ("/api/watchlist", "/api/news/watch")  # owner-only answers
             and (not _TOKEN or hmac.compare_digest(key, _TOKEN))):
         ttl, swr = CDN_TTL.get(request.url.path, (60, 60))
         res.headers["Vercel-CDN-Cache-Control"] = f"max-age={ttl}, stale-while-revalidate={swr}"
@@ -400,8 +401,16 @@ class RefIn(BaseModel):
     note: str = ""
 
 
+def owner_only(request: Request) -> None:
+    """Changes to the shared dashboard (index list, reference values, watchlist): on the public deployed
+    site only the board admin may make them; locally (single user, no Supabase) anyone at the keyboard."""
+    if remote.ON and not board.is_admin(request):
+        raise HTTPException(403, "운영자만 바꿀 수 있습니다 (게시판에 운영자 계정으로 로그인)")
+
+
 @app.post("/api/reference")
-def add_reference(r: RefIn):
+def add_reference(r: RefIn, request: Request):
+    owner_only(request)
     if r.metric not in validation.REF_METRICS:
         raise HTTPException(400, f"metric must be one of {validation.REF_METRICS}")
     store.upsert("manual_reference", pd.DataFrame([{**r.model_dump(), "entered_at": store.now_utc()}]), ["date", "metric"])
@@ -409,7 +418,8 @@ def add_reference(r: RefIn):
 
 
 @app.delete("/api/reference")
-def delete_reference(date: dt.date, metric: str):
+def delete_reference(date: dt.date, metric: str, request: Request):
+    owner_only(request)
     ref = store.read("manual_reference")
     if len(ref):
         store.write("manual_reference", ref[~((ref["date"] == date) & (ref["metric"] == metric))])
@@ -440,7 +450,8 @@ def world_config():
 
 
 @app.post("/api/world/config")
-def world_set_config(items: list[IndexIn], bg: BackgroundTasks):
+def world_set_config(items: list[IndexIn], bg: BackgroundTasks, request: Request):
+    owner_only(request)
     known = {it["symbol"] for it in world.config()}
     for it in items:
         try:
@@ -532,13 +543,21 @@ class WatchIn(BaseModel):
     market: str
 
 
+def _is_owner(request: Request) -> bool:
+    return not remote.ON or board.is_admin(request)
+
+
 @app.get("/api/watchlist")
-def watchlist():
-    return watch.overview()
+def watchlist(request: Request):
+    """The owner's list (it drives the owner's Telegram alerts): other visitors get an empty one."""
+    if not _is_owner(request):
+        return {"items": [], "events": [], "owner": False}
+    return {**watch.overview(), "owner": True}
 
 
 @app.post("/api/watchlist")
-def watchlist_save(items: list[WatchIn]):
+def watchlist_save(items: list[WatchIn], request: Request):
+    owner_only(request)
     """Replace the watchlist; every stock must be in the sector map (same tickers as the stock page)."""
     sm = store.read("sector_map")
     known = set(zip(sm["ticker"], sm["market"])) if len(sm) else set()
@@ -576,8 +595,8 @@ def news_stock(ticker: str, market: str):
 
 
 @app.get("/api/news/watch")
-def news_watch():
-    return news.watch(watch.load())
+def news_watch(request: Request):
+    return news.watch(watch.load()) if _is_owner(request) else []
 
 
 @app.get("/api/stock/search")

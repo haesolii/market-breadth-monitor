@@ -3,7 +3,7 @@ import { useState } from "react";
 import { send, useApi } from "@/lib/api";
 
 export type WatchItem = { ticker: string; market: string; name?: string };
-type WatchRes = { items: WatchItem[] };
+type WatchRes = { items: WatchItem[]; owner?: boolean };
 
 /** ☆ / ★ toggle that adds or removes one stock from the shared watchlist. */
 export function WatchStar({ ticker, market }: { ticker: string; market: string }) {
@@ -11,6 +11,7 @@ export function WatchStar({ ticker, market }: { ticker: string; market: string }
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const items = data?.items ?? [];
+  if (data?.owner === false) return null;  // the watchlist is the owner's
   const on = items.some((x) => x.ticker === ticker && x.market === market);
   const toggle = async () => {
     setBusy(true);

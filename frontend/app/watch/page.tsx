@@ -9,7 +9,7 @@ import { MK, stockHref } from "@/lib/stock";
 
 type Item = { ticker: string; market: string; name?: string; sector?: string; close?: number | null; r1d?: number | null; r1w?: number | null; r1m?: number | null; ytd?: number | null };
 type Ev = { date: string; ticker: string; name: string; kind: string; text: string; key: string; upcoming: boolean };
-type Res = { items: Item[]; events: Ev[] };
+type Res = { items: Item[]; events: Ev[]; owner?: boolean };
 
 const pct = (v: number | null | undefined) => (v === null || v === undefined ? "—" : `${v > 0 ? "+" : ""}${v.toFixed(1)}%`);
 const tone = (v: number | null | undefined) => (!v ? "text-zinc-400" : v > 0 ? "text-emerald-400" : "text-red-400");
@@ -36,6 +36,12 @@ export default function Watch() {
   const events = (data?.events ?? []).filter((e) => !kind || e.kind === kind);
   const kinds = [...new Set((data?.events ?? []).map((e) => e.kind))];
 
+  if (data && data.owner === false) return (
+    <Panel title="관심종목">
+      <div className="py-6 text-center text-sm text-zinc-400">관심종목과 알림은 운영자 전용 기능입니다.<br />
+        <span className="text-xs text-zinc-500">종목은 위쪽 검색창에서 찾아볼 수 있습니다.</span></div>
+    </Panel>
+  );
   return (
     <div className="space-y-3">
       <Panel title="관심종목 (Watchlist)" right={<StockSearch onPick={add} placeholder="관심종목 추가: 종목명 또는 티커" />}>

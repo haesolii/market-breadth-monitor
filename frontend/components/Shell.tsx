@@ -146,9 +146,6 @@ export function Shell({ children }: { children: React.ReactNode }) {
           ))}
         </div>
         <Link href="/privacy" className="block px-5 pb-1 text-[11px] text-zinc-600 hover:text-zinc-300">개인정보처리방침</Link>
-        {process.env.NEXT_PUBLIC_AUTH === "1" && (
-          <a href="/auth/logout" className="block px-5 pb-3 text-[11px] text-zinc-500 hover:text-zinc-300">로그아웃</a>
-        )}
       </nav>
       <div className="min-w-0 flex-1">
         <StatusBar />

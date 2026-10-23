@@ -49,3 +49,13 @@ def test_session_token_tamper():
     tok = board.session_token(7)
     assert board.session_uid(tok) == 7
     assert board.session_uid(tok.replace("7.", "8.", 1)) is None and board.session_uid("x") is None
+
+
+def test_reserved_nicknames(monkeypatch):
+    monkeypatch.setattr(board, "LIMITS", {k: (0, 1000) for k in board.LIMITS})
+    monkeypatch.setattr(board, "ADMINS", {"boss1"})
+    c = _c("7.7.7.7")
+    assert c.post("/api/board/signup", json={"username": "fake01", "nickname": "운영 자", "password": "password1"}).status_code == 400
+    assert c.post("/api/board/posts", json={"board": "free", "title": "t", "body": "b", "nick": "관리자봇", "password": "1234"}).status_code == 400
+    assert c.post("/api/board/signup", json={"username": "boss1", "nickname": "운영자", "password": "password1"}).status_code == 200
+    assert c.get("/api/board/me").json()["admin"] is True

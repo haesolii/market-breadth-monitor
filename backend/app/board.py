@@ -34,6 +34,7 @@ ADMINS = {x.strip() for x in os.getenv("BOARD_ADMINS", "").split(",") if x.strip
 SESSION_DAYS = 30
 # (seconds between, max per hour) per IP; members get the lighter limits
 LIMITS = {("post", False): (60, 10), ("post", True): (30, 30), ("comment", False): (10, 60), ("comment", True): (5, 200)}
+RESERVED = ("운영자", "관리자", "운영진", "admin", "administrator", "moderator")  # nicknames only admins may use
 BANNED_WORDS = ["리딩방", "무료 리딩", "수익 보장", "원금 보장", "카톡방", "오픈채팅"]
 LINK = re.compile(r"(https?://|www\.|t\.me/|open\.kakao|discord\.gg|bit\.ly|"
                   r"(카톡|카카오톡|텔레|텔레그램|라인|디코)\s*(아이디|id|ID)?\s*[:：]?\s*[A-Za-z0-9_.@-]{3,})", re.I)
@@ -166,6 +167,12 @@ def check_words(text: str) -> None:
         raise HTTPException(400, f"금지어가 포함되어 있습니다: {hit}")
 
 
+def check_nick(nick: str, admin: bool) -> None:
+    n = re.sub(r"[\s._-]", "", nick).lower()
+    if not admin and any(r in n for r in RESERVED):
+        raise HTTPException(400, "운영자·관리자로 보이는 닉네임은 쓸 수 없습니다")
+
+
 def check_rate(t: _Tx, kind: str, ip: str, member: bool) -> None:
     gap, per_hour = LIMITS[(kind, member)]
     table = "board_posts" if kind == "post" else "board_comments"
@@ -276,6 +283,7 @@ def signup(body: SignupIn, request: Request, response: Response):
         raise HTTPException(400, "잘못된 요청")
     nick = body.nickname.strip()
     check_words(nick)
+    check_nick(nick, body.username in ADMINS)
     with tx() as t:
         check_ban(t, client_ip(request), None)
         if t.one("SELECT id FROM board_users WHERE username = %s OR nickname = %s", (body.username, nick)):
@@ -343,6 +351,8 @@ def create_post(body: PostIn, request: Request):
             raise HTTPException(403, "관리자만 쓸 수 있는 게시판입니다")
         if not w.user and (len(body.nick.strip()) < 2 or len(body.password) < 4):
             raise HTTPException(400, "비회원은 닉네임(2자 이상)과 비밀번호(4자 이상)를 입력하세요")
+        if not w.user:
+            check_nick(body.nick, False)
         check_rate(t, "post", w.ip, bool(w.user))
         title, text = body.title.strip(), body.body.strip()
         if not w.user:
@@ -433,6 +443,8 @@ def add_comment(pid: int, body: CommentIn, request: Request):
             raise HTTPException(400, "답글 대상 댓글이 없습니다")
         if not w.user and (len(body.nick.strip()) < 2 or len(body.password) < 4):
             raise HTTPException(400, "비회원은 닉네임(2자 이상)과 비밀번호(4자 이상)를 입력하세요")
+        if not w.user:
+            check_nick(body.nick, False)
         check_rate(t, "comment", w.ip, bool(w.user))
         text = body.body.strip() if w.user else guest_clean(body.body.strip())
         check_words(text)

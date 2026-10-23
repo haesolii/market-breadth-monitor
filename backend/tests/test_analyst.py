@@ -13,7 +13,7 @@ def test_parse_and_enrich_reaction():
              {"nid": "0", "writeDate": "2026-10-01", "brokerName": "A증권", "itemCode": "000001", "itemName": "가", "title": "x",
               "content": "", "goalPrice": "10000", "opinionText": "Buy"}]
     rep = analyst.parse(items)
-    assert rep.loc[0, "title"] == "t&s" and rep.loc[0, "summary"] == "요약\n- 하나\n- 둘" and rep.loc[0, "goal"] == 12000
+    assert rep.loc[0, "title"] == "t&s" and rep.loc[0, "summary"] == "" and rep.loc[0, "goal"] == 12000
     d = [dt.date(2026, 10, x) for x in (1, 2, 5, 6, 7, 8)]  # 10-03 (Sat) is not a session
     bars = pd.DataFrame({"date": d, "ticker": "000001", "close": [100.0, 100, 100, 100, 110, 120]})
     e = analyst.enrich(rep, bars).set_index("nid")

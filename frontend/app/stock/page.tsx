@@ -11,7 +11,7 @@ import { WatchStar } from "@/components/WatchStar";
 import { useApi } from "@/lib/api";
 import { MK, WHO, eok, stockHref } from "@/lib/stock";
 
-type Rep = { nid: number; date: string; broker: string; title: string; summary: string; goal: number | null; prev_goal: number | null; goal_chg: number | null; opinion: string; react1d: number | null };
+type Rep = { nid: number; date: string; broker: string; title: string; goal: number | null; prev_goal: number | null; goal_chg: number | null; opinion: string; react1d: number | null };
 type D = {
   ticker: string; name: string; market: string; exchange: string; sector: string; industry: string; size: number; close: number; date: string;
   returns: Record<string, number | null>; ranks: Record<string, { rank: number; of: number; mkt_pctile: number }>; sector_above: number | null;
@@ -160,7 +160,7 @@ function Detail({ t, m }: { t: string; m: string }) {
                 <tbody>{d.analyst.rows.map((r) => (
                   <tr key={r.nid} className="border-t border-zinc-900 text-center align-top">
                     <td className="whitespace-nowrap text-left font-mono">{r.date}</td><td className="whitespace-nowrap text-left">{r.broker}</td>
-                    <td className="text-left"><details><summary className="cursor-pointer text-zinc-200">{r.title}</summary><div className="whitespace-pre-line py-1 text-zinc-400">{r.summary}</div></details></td>
+                    <td className="text-left"><a href={`https://stock.naver.com/research/company/${r.nid}`} target="_blank" rel="noreferrer" className="text-zinc-200 hover:text-sky-300 hover:underline">{r.title}</a></td>
                     <td className="font-mono">{num(r.goal)}</td><td className={`font-mono ${tone(r.goal_chg)}`}>{r.goal_chg === null ? (r.prev_goal === null && r.goal ? "신규" : "—") : pct(r.goal_chg)}</td>
                     <td>{r.opinion}</td><td className={`font-mono ${tone(r.react1d)}`}>{pct(r.react1d)}</td>
                   </tr>

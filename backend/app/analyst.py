@@ -42,7 +42,7 @@ def _num(x) -> float | None:
 def parse(items: list[dict]) -> pd.DataFrame:
     rows = [{"nid": int(x["nid"]), "date": dt.date.fromisoformat(x["writeDate"]), "broker": x.get("brokerName") or "",
              "code": x.get("itemCode") or "", "name": x.get("itemName") or "", "title": html.unescape(x.get("title") or ""),
-             "summary": _text(x.get("content")), "goal": _num(x.get("goalPrice")) or None,
+             "summary": "", "goal": _num(x.get("goalPrice")) or None,  # the broker's text is not kept (copyright); facts only
              "opinion": (x.get("opinionText") or "").strip()} for x in items]
     return pd.DataFrame(rows, columns=COLS)
 
@@ -108,6 +108,7 @@ def refresh() -> dict:
     new = fetch(set(old["nid"]) if len(old) else set(), since)
     raw = pd.concat([old[COLS] if len(old) else None, new], ignore_index=True).drop_duplicates("nid", keep="last")
     raw = raw[raw["date"] >= since - dt.timedelta(days=BACKFILL_DAYS)]  # keep ~a year
+    raw["summary"] = ""  # drop summaries stored before they were left out
     out = enrich(raw, _kr_bars(set(raw["code"]), min(raw["date"]) - dt.timedelta(days=10)))
     store.write("analyst_reports", out)
     return {"latest_date": str(out["date"].max()), "new": len(new), "reports": len(out)}
@@ -115,7 +116,7 @@ def refresh() -> dict:
 
 # ---- read side ----------------------------------------------------------------------
 def _rows(df: pd.DataFrame) -> list[dict]:
-    df = df.copy()
+    df = df.drop(columns=["summary"], errors="ignore").copy()  # never served: the brokers' text
     if "date" in df:
         df["date"] = df["date"].astype(str)
     return df.astype(object).where(df.notna(), None).to_dict("records")

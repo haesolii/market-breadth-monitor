@@ -8,7 +8,7 @@ import { downloadCSV } from "@/lib/csv";
 import { useSetting } from "@/lib/settings";
 import { stockHref } from "@/lib/stock";
 
-type Rep = { nid: number; date: string; broker: string; code: string; name: string; title: string; summary: string; goal: number | null; opinion: string;
+type Rep = { nid: number; date: string; broker: string; code: string; name: string; title: string; goal: number | null; opinion: string;
   prev_goal: number | null; goal_chg: number | null; react1d: number | null; ret_since: number | null; last_close: number | null; upside: number | null };
 type Cov = { code: string; name: string; n: number; brokers: number; react: number | null; upside: number | null };
 type Feed = { latest?: string; rows: Rep[]; brokers: string[]; top_covered: Cov[]; up: Rep[]; down: Rep[] };
@@ -53,7 +53,7 @@ function Analyst() {
       </>}>
         <div className="text-[11px] text-zinc-500">
           네이버 리서치 기업 리포트 · 최신 {data?.latest ?? "—"} · 발간일 반응 = 발간일 종가 ÷ 전 거래일 종가 · 이후 = 최근 종가 ÷ 발간 전일 종가 · 상승여력 = 목표가 ÷ 최근 종가.
-          요약은 증권사 원문 요약입니다. 투자 권유 아님.
+          행을 누르면 네이버 리서치의 리포트 원문으로 연결됩니다. 투자 권유 아님.
         </div>
       </Panel>
       <Err error={error} />
@@ -77,7 +77,9 @@ function Analyst() {
                       <td className={`font-mono ${tone(r.react1d)}`}>{pct(r.react1d)}</td><td className={`font-mono ${tone(r.ret_since)}`}>{pct(r.ret_since)}</td>
                       <td className={`font-mono ${tone(r.upside)}`}>{pct(r.upside, 0)}</td>
                     </tr>
-                    {open === r.nid && <tr><td colSpan={10} className="whitespace-pre-wrap bg-zinc-950 px-3 py-2 text-left text-zinc-300">{r.summary || "요약 없음"}</td></tr>}
+                    {open === r.nid && <tr><td colSpan={10} className="bg-zinc-950 px-3 py-2 text-left">
+                      <a href={`https://stock.naver.com/research/company/${r.nid}`} target="_blank" rel="noreferrer" className="text-sky-400 hover:underline">리포트 원문 보기 (네이버 리서치) ↗</a>
+                    </td></tr>}
                   </Fragment>
                 ))}
               </tbody>
@@ -124,7 +126,7 @@ function Analyst() {
             <table className="w-full text-xs"><tbody>
               {(st.data?.rows ?? []).map((r) => (
                 <tr key={r.nid} className="border-t border-zinc-900 text-center">
-                  <td className="text-left font-mono">{r.date}</td><td className="text-left">{r.broker}</td><td className="max-w-96 truncate text-left" title={r.summary}>{r.title}</td>
+                  <td className="text-left font-mono">{r.date}</td><td className="text-left">{r.broker}</td><td className="max-w-96 truncate text-left" title={r.title}>{r.title}</td>
                   <td>{r.opinion}</td><td className="font-mono">{won(r.goal)}</td><td className={`font-mono ${tone(r.goal_chg)}`}>{r.goal_chg ? pct(r.goal_chg) : ""}</td>
                   <td className={`font-mono ${tone(r.react1d)}`}>{pct(r.react1d)}</td>
                 </tr>

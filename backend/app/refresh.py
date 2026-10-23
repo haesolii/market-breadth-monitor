@@ -8,7 +8,7 @@ import traceback
 
 import pandas as pd
 
-from . import analyst, calendar_, dart, earnings, etf, flows, indicators, kr_funds, leaders, macro, sectors, store, term, universes, world
+from . import analyst, calendar_, dart, earnings, etf, flows, indicators, kr_funds, leaders, macro, remote, sectors, store, term, universes, world
 from .collectors import massive, public, yahoo
 from .config import CRYPTO_SCANNER, DART_API_KEY, KR_SCANNER, MASSIVE_API_KEY, MASSIVE_START, REFRESH_INTERVAL_MIN, YAHOO_HISTORY, YAHOO_SCANNER
 from .market_calendar import CALENDARS, latest_complete_session, live_session, session_elapsed, sessions, volume_share
@@ -31,6 +31,9 @@ OWN_TABLE = {"indices": "indices", "macro": "macro", "sectors": "sector_map", "e
 
 
 def latest_date(source: str):
+    if remote.ON:  # deployed API: ask the database, never load a (possibly 300k-row) table for one date
+        d = remote.max_date(OWN_TABLE.get(source, "breadth20"), None if source in OWN_TABLE else source)
+        return pd.to_datetime(d).date() if d is not None else None
     if source in OWN_TABLE:
         df = store.read(OWN_TABLE[source])
     else:

@@ -208,6 +208,23 @@ def select(name: str, col: str, value) -> pd.DataFrame:
     return df
 
 
+def max_date(name: str, source: str | None = None):
+    """Latest date of a published table (optionally of one source) without loading the table."""
+    key = f"m:{name}:{source}"
+    hit = _cache.get(key)
+    if hit and time.time() - hit[0] < CACHE_SECONDS:
+        return hit[1]
+    with connection() as con, con.cursor() as cur:
+        cur.execute("SELECT to_regclass(%s)", (name,))
+        val = None
+        if cur.fetchone()[0]:
+            cur.execute(f"SELECT max(date) FROM {_q(name)}" + (" WHERE source = %s" if source else ""), (source,) if source else ())
+            val = cur.fetchone()[0]
+    with _lock:
+        _cache[key] = (time.time(), val)
+    return val
+
+
 def kv_get(key: str, default=None):
     hit = _cache.get("k:" + key)
     if hit and time.time() - hit[0] < CACHE_SECONDS:

@@ -11,7 +11,7 @@ import pandas as pd
 from . import indicators, macro, store, universes, world
 from .collectors import massive, public, yahoo
 from .config import CRYPTO_SCANNER, KR_SCANNER, MASSIVE_API_KEY, MASSIVE_START, REFRESH_INTERVAL_MIN, YAHOO_HISTORY, YAHOO_SCANNER
-from .market_calendar import CALENDARS, latest_complete_session, live_session, session_elapsed, sessions
+from .market_calendar import CALENDARS, latest_complete_session, live_session, session_elapsed, sessions, volume_share
 
 _busy = threading.Lock()
 
@@ -42,16 +42,15 @@ def _save_computed(source: str, bars: pd.DataFrame) -> dict:
 
 
 def _paced(bars: pd.DataFrame, cal: str) -> pd.DataFrame:
-    """While today's session is live, project today's partial volume to a full day, so the
-    'volume >= min' and 'volume > yesterday' conditions compare like with like (stored bars stay raw)."""
+    """While today's session is live, project today's partial volume to a full day (typical intraday
+    volume curve), so 'volume >= min' and 'volume > yesterday' compare like with like (stored bars stay raw)."""
     today = live_session(cal=cal)
     frac = session_elapsed(cal=cal)
     if not today or frac >= 1 or bars.empty:
         return bars
-    # ponytail: linear pace; overstates volume early in the day (U-shaped intraday volume).
     b = bars.copy()
     on = pd.to_datetime(b["date"]).dt.date == today
-    b.loc[on, "volume"] = b.loc[on, "volume"] / frac
+    b.loc[on, "volume"] = b.loc[on, "volume"] / volume_share(frac)
     return b
 
 

@@ -104,3 +104,12 @@ def test_crypto_uses_turnover_not_unit_count():
                           "close": [px, px * 1.05], "volume": [5e5, 1e6]})
         return bool(store.sql(f"SELECT up4 FROM ({indicators.flags_sql(CRYPTO)}) ORDER BY date", bars=b)["up4"].iloc[-1])
     assert not up4(0.10) and up4(1.0)
+
+
+def test_volume_share_curve():
+    from app.market_calendar import volume_share
+    assert volume_share(0) == 0 and abs(volume_share(1) - 1) < 1e-12
+    assert volume_share(1 / 13) > 1 / 13          # heavy open: more than a linear share after 30 min
+    assert volume_share(12 / 13) < 12 / 13        # closing auction still to come
+    xs = [volume_share(i / 100) for i in range(101)]
+    assert xs == sorted(xs)

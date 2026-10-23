@@ -1,6 +1,7 @@
 """Exchange trading calendars (holidays, early closes, DST) via pandas_market_calendars."""
 import datetime as dt
 import functools
+import itertools
 import threading
 import warnings
 from zoneinfo import ZoneInfo
@@ -49,6 +50,20 @@ def session_elapsed(now: dt.datetime | None = None, cal: str = "NYSE") -> float:
         return 1.0
     o, c = s["market_open"].iloc[0], s["market_close"].iloc[0]
     return float(min(1.0, max((now - o) / (c - o), 0.05)))  # floor: first minutes would blow up 20x+
+
+
+# Typical share of a day's volume traded in each half-hour of a 6.5-hour session (US and KRX alike):
+# U-shaped, heavy open and closing auction. ponytail: one static curve for both markets and all
+# stocks; per-market curves measured from intraday bars would be more exact.
+_HALF_HOURS = (0.12, 0.08, 0.07, 0.06, 0.055, 0.05, 0.05, 0.05, 0.055, 0.06, 0.07, 0.09, 0.19)
+_CUM = (0.0, *itertools.accumulate(_HALF_HOURS))
+
+
+def volume_share(frac: float) -> float:
+    """Expected share of the full day's volume done when `frac` of the session has elapsed."""
+    x = min(max(frac, 0.0), 1.0) * len(_HALF_HOURS)
+    i = min(int(x), len(_HALF_HOURS) - 1)
+    return (_CUM[i] + (x - i) * _HALF_HOURS[i]) / _CUM[-1]
 
 
 def latest_complete_session(now: dt.datetime | None = None, cal: str = "NYSE") -> dt.date:

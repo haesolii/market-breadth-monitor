@@ -13,7 +13,7 @@ from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-from . import etf, indicators, macro, refresh, remote, research, sectors, store, universes, usage, validation, world
+from . import analyst, earnings, etf, indicators, macro, refresh, remote, research, sectors, store, universes, usage, validation, world
 from .config import MASSIVE_API_KEY, REFRESH_INTERVAL_MIN, YAHOO_SCANNER
 from .indicators import MM_COLS
 from .market_calendar import CALENDARS, latest_complete_session
@@ -136,7 +136,7 @@ def status():
            "expected_sessions": {c: str(latest_complete_session(cal=c)) for c in ("NYSE", "XKRX")},
            "final_hours": {c: h for c, (_, h) in CALENDARS.items()}, "refresh_min": REFRESH_INTERVAL_MIN}
     enabled = refresh.enabled_sources()
-    for s in ["indices", "macro", "public_repo", "yahoo", "nasdaq", "kospi", "kosdaq", "crypto", "massive", "sectors", "etf"]:
+    for s in ["indices", "macro", "public_repo", "yahoo", "nasdaq", "kospi", "kosdaq", "crypto", "massive", "sectors", "etf", "analyst", "earnings"]:
         ld = refresh.latest_date(s)
         derived = universes.UNIVERSES.get(s, {}).get("derived_from")
         out["sources"][s] = {**st["sources"].get(s, {}), "latest_date": str(ld) if ld else None,
@@ -421,6 +421,24 @@ def etf_overview(days: int = Query(7, ge=1, le=90)):
 @app.get("/api/etf/holdings")
 def etf_holdings(etf_code: str = Query(..., alias="etf")):
     return etf.holdings(etf_code)
+
+
+# ---- broker reports & earnings ---------------------------------------------------
+@app.get("/api/analyst")
+def analyst_feed(days: int = Query(7, ge=1, le=365), q: str = "", kind: str = "all", broker: str = ""):
+    if kind not in ("all", "up", "down", "new"):
+        raise HTTPException(400, "kind must be all|up|down|new")
+    return analyst.feed(days, q.strip(), kind, broker)
+
+
+@app.get("/api/analyst/stock")
+def analyst_stock(code: str):
+    return analyst.stock(code)
+
+
+@app.get("/api/earnings")
+def earnings_view(back: int = Query(7, ge=1, le=120), ahead: int = Query(14, ge=0, le=21), min_cap: float = Query(2e9, ge=0)):
+    return earnings.view(back, ahead, min_cap)
 
 
 # ---- macro (FRED) ---------------------------------------------------------------

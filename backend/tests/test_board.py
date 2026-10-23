@@ -119,3 +119,14 @@ def test_members_have_their_own_watchlists():
     assert [x["ticker"] for x in board.watch_get(102)] == ["005930", "AAPL"]          # order kept, lists separate
     board.watch_set(101, [])
     assert board.watch_get(101) == [] and len(board.watch_get(102)) == 2
+
+
+def test_admin_may_write_banned_words_in_notices(monkeypatch):
+    monkeypatch.setattr(board, "LIMITS", {k: (0, 1000) for k in board.LIMITS})
+    monkeypatch.setattr(board, "ADMINS", {"boss3"})
+    a = _c("5.5.5.1")
+    a.post("/api/board/signup", json={"username": "boss3", "nickname": "운영자3", "password": "password1"})
+    r = a.post("/api/board/posts", json={"board": "notice", "title": "안내", "body": "리딩방 홍보 금지"})
+    assert r.status_code == 200
+    g = _c("5.5.5.2")
+    assert g.post("/api/board/posts", json={"board": "free", "title": "t", "body": "리딩방 모집", "nick": "손님", "password": "1234"}).status_code == 400

@@ -424,7 +424,8 @@ def create_post(body: PostIn, request: Request):
         title, text = body.title.strip(), body.body.strip()
         if not w.user:
             title, text = guest_clean(title), guest_clean(text)
-        check_words(title + "\n" + text)
+        if not w.admin:  # the admin may quote banned words (notices about them)
+            check_words(title + "\n" + text)
         row = t.one("INSERT INTO board_posts (board, title, body, user_id, nick, pw, ip, ip_prefix, created_at, tickers) "
                     "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id",
                     (body.board, title, text, w.uid, w.user["nickname"] if w.user else body.nick.strip(),
@@ -466,7 +467,8 @@ def edit_post(pid: int, body: PostIn, request: Request):
         title, text = body.title.strip(), body.body.strip()
         if row["user_id"] is None:
             title, text = guest_clean(title), guest_clean(text)
-        check_words(title + "\n" + text)
+        if not w.admin:  # the admin may quote banned words (notices about them)
+            check_words(title + "\n" + text)
         t.q("UPDATE board_posts SET title = %s, body = %s, updated_at = %s, tickers = %s WHERE id = %s",
             (title, text, now(), tickers_of(title + " " + text), pid))
         _changed()
@@ -519,7 +521,8 @@ def add_comment(pid: int, body: CommentIn, request: Request):
             check_member_nick(t, body.nick)
         check_rate(t, "comment", w.ip, bool(w.user))
         text = body.body.strip() if w.user else guest_clean(body.body.strip())
-        check_words(text)
+        if not w.admin:  # the admin may quote banned words (notices about them)
+            check_words(text)
         t.q("INSERT INTO board_comments (post_id, parent_id, body, user_id, nick, pw, ip, ip_prefix, created_at) "
             "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
             (pid, body.parent_id, text, w.uid, w.user["nickname"] if w.user else body.nick.strip(),

@@ -39,8 +39,13 @@ BANNED_WORDS = ["리딩방", "무료 리딩", "수익 보장", "원금 보장", 
 LINK = re.compile(r"(https?://|www\.|t\.me/|open\.kakao|discord\.gg|bit\.ly|"
                   r"(카톡|카카오톡|텔레|텔레그램|라인|디코)\s*(아이디|id|ID)?\s*[:：]?\s*[A-Za-z0-9_.@-]{3,})", re.I)
 TICKER = re.compile(r"\$([A-Za-z]{1,6}(?:\.[A-Z])?|\d{6})\b")
-_local = threading.local()
 _ready = False
+LIST_TTL = 10  # seconds a list page is served from memory (writes on this instance clear it at once)
+_lists: dict[tuple, tuple[float, dict]] = {}
+
+
+def _changed() -> None:
+    _lists.clear()
 
 ID = "BIGSERIAL PRIMARY KEY" if remote.ON else "INTEGER PRIMARY KEY AUTOINCREMENT"
 SCHEMA = [
@@ -67,8 +72,9 @@ class _Tx:
     """One connection + cursor per request; commit on success. SQL uses %s placeholders."""
 
     def __enter__(self):
-        if remote.ON:
-            self.con = remote._connect()
+        self._pg = remote.connection() if remote.ON else None  # pooled on Vercel; commits / rolls back on exit
+        if self._pg is not None:
+            self.con = self._pg.__enter__()
         else:
             self.con = sqlite3.connect(DATA / "board.db", timeout=10)
             self.con.row_factory = sqlite3.Row
@@ -86,7 +92,10 @@ class _Tx:
         rows = self.q(sql, params)
         return rows[0] if rows else None
 
-    def __exit__(self, exc, *_):
+    def __exit__(self, exc, val, tb):
+        if self._pg is not None:
+            self.cur.close()
+            return self._pg.__exit__(exc, val, tb)
         try:
             if exc is None:
                 self.con.commit()
@@ -314,6 +323,18 @@ def logout(response: Response):
 
 @router.get("/posts")
 def posts(board: str = "", q: str = "", ticker: str = "", page: int = Query(1, ge=1, le=10000), best: bool = False):
+    key = (board, q.strip().lower(), ticker.upper(), page, best)
+    hit = _lists.get(key)
+    if hit and time.time() - hit[0] < LIST_TTL:
+        return hit[1]
+    out = _posts(board, q, ticker, page, best)
+    if len(_lists) > 500:
+        _lists.clear()
+    _lists[key] = (time.time(), out)
+    return out
+
+
+def _posts(board: str, q: str, ticker: str, page: int, best: bool) -> dict:
     where, args = ["deleted = 0"], []
     if board:
         where.append("board = %s")
@@ -362,6 +383,7 @@ def create_post(body: PostIn, request: Request):
                     "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id",
                     (body.board, title, text, w.uid, w.user["nickname"] if w.user else body.nick.strip(),
                      None if w.user else hash_pw(body.password), w.ip, ip_prefix(w.ip), now(), tickers_of(title + " " + text)))
+    _changed()
     return {"id": row["id"]}
 
 
@@ -401,6 +423,7 @@ def edit_post(pid: int, body: PostIn, request: Request):
         check_words(title + "\n" + text)
         t.q("UPDATE board_posts SET title = %s, body = %s, updated_at = %s, tickers = %s WHERE id = %s",
             (title, text, now(), tickers_of(title + " " + text), pid))
+        _changed()
     return {"ok": True}
 
 
@@ -409,6 +432,7 @@ def delete_post(pid: int, body: PwIn, request: Request):
     with tx() as t:
         _owned(t, "board_posts", pid, Who(t, request), body.password)
         t.q("UPDATE board_posts SET deleted = 1 WHERE id = %s", (pid,))
+        _changed()
     return {"ok": True}
 
 
@@ -427,6 +451,7 @@ def like(pid: int, request: Request):
         t.q("INSERT INTO board_likes (post_id, voter) VALUES (%s, %s)", (pid, _voter(w)))
         t.q("UPDATE board_posts SET likes = likes + 1 WHERE id = %s", (pid,))
         n = t.one("SELECT likes FROM board_posts WHERE id = %s", (pid,))["likes"]
+        _changed()
     return {"likes": int(n)}
 
 
@@ -453,6 +478,7 @@ def add_comment(pid: int, body: CommentIn, request: Request):
             (pid, body.parent_id, text, w.uid, w.user["nickname"] if w.user else body.nick.strip(),
              None if w.user else hash_pw(body.password), w.ip, ip_prefix(w.ip), now()))
         t.q("UPDATE board_posts SET comments = comments + 1 WHERE id = %s", (pid,))
+        _changed()
     return {"ok": True}
 
 
@@ -462,6 +488,7 @@ def delete_comment(cid: int, body: PwIn, request: Request):
         row = _owned(t, "board_comments", cid, Who(t, request), body.password)
         t.q("UPDATE board_comments SET deleted = 1 WHERE id = %s", (cid,))
         t.q("UPDATE board_posts SET comments = comments - 1 WHERE id = %s", (row["post_id"],))
+        _changed()
     return {"ok": True}
 
 

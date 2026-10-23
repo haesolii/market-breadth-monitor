@@ -1,7 +1,6 @@
 """Data-quality checks and cross-source / manual-reference comparisons."""
 import datetime as dt
 
-import duckdb
 import pandas as pd
 
 from . import store, universes
@@ -32,6 +31,8 @@ def bars_checks(source: str) -> dict | None:
         rel = f"read_parquet('{p.as_posix()}')"
     else:
         return None
+    import duckdb  # local / refresh-job only: the deployed API reads Supabase
+
     con = duckdb.connect()
     try:
         q = lambda s: con.sql(s.replace("BARS", rel)).df()  # noqa: E731

@@ -59,3 +59,11 @@ def test_reserved_nicknames(monkeypatch):
     assert c.post("/api/board/posts", json={"board": "free", "title": "t", "body": "b", "nick": "관리자봇", "password": "1234"}).status_code == 400
     assert c.post("/api/board/signup", json={"username": "boss1", "nickname": "운영자", "password": "password1"}).status_code == 200
     assert c.get("/api/board/me").json()["admin"] is True
+
+
+def test_list_cache_cleared_by_writes(monkeypatch):
+    monkeypatch.setattr(board, "LIMITS", {k: (0, 1000) for k in board.LIMITS})
+    c = _c("8.8.8.8")
+    before = c.get("/api/board/posts?board=journal").json()["total"]
+    c.post("/api/board/posts", json={"board": "journal", "title": "일지", "body": "b", "nick": "기록", "password": "1234"})
+    assert c.get("/api/board/posts?board=journal").json()["total"] == before + 1     # not the cached page

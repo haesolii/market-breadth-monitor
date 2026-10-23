@@ -18,7 +18,7 @@ if not exist backend\.venv (
   %PY% -m venv backend\.venv || exit /b 1
 )
 backend\.venv\Scripts\python -m pip install -q --upgrade pip
-backend\.venv\Scripts\pip install -q -r backend\requirements.txt || exit /b 1
+backend\.venv\Scripts\pip install -q -r backend\requirements-job.txt || exit /b 1
 
 if not exist .env copy .env.example .env >nul
 

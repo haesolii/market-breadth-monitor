@@ -5,7 +5,6 @@ import json
 import os
 import threading
 
-import duckdb
 import pandas as pd
 
 from . import remote
@@ -57,6 +56,8 @@ def replace_source(name: str, source: str, df: pd.DataFrame) -> None:
 
 
 def sql(query: str, **frames) -> pd.DataFrame:
+    import duckdb  # local / refresh-job only: the deployed API reads Supabase
+
     con = duckdb.connect()
     try:
         for k, v in frames.items():

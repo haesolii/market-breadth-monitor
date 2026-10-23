@@ -58,7 +58,7 @@ def _notify(text: str) -> None:
 
 def _exec(sql: str, params: tuple, fetch: bool = False):
     global _ready
-    with remote._connect() as con, con.cursor() as cur:
+    with remote.connection() as con, con.cursor() as cur:
         if not _ready:
             for d in DDL:
                 cur.execute(d)

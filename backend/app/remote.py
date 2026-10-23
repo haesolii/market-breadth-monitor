@@ -39,6 +39,26 @@ def _connect():
     return psycopg.connect(_url(), autocommit=False, prepare_threshold=None)  # no prepared stmts: pooler-safe
 
 
+POOL_MAX = 8  # per Vercel instance; the transaction pooler multiplexes them onto the database
+_pool = None
+
+
+def connection():
+    """Context manager yielding a connection that commits on success. On Vercel an instance serves many
+    requests, so connections are pooled and reused (opening one costs a TCP + TLS + auth round trip);
+    the refresh job and local runs open a fresh one."""
+    global _pool
+    if not os.getenv("VERCEL"):
+        return _connect()
+    if _pool is None:
+        with _lock:
+            if _pool is None:
+                from psycopg_pool import ConnectionPool
+                _pool = ConnectionPool(_url(), min_size=1, max_size=POOL_MAX, open=True, check=ConnectionPool.check_connection,
+                                       kwargs={"autocommit": False, "prepare_threshold": None})
+    return _pool.connection()
+
+
 def _q(name: str) -> str:
     return '"' + name.replace('"', "") + '"'
 
@@ -63,7 +83,7 @@ def read_table(name: str) -> pd.DataFrame:
 def _load(name: str, hit=None) -> pd.DataFrame:
     """Unchanged version -> keep the cached frame; changed -> re-read only the last
     SPLICE_DAYS (intraday publishes touch recent rows), full read if rows don't add up."""
-    with _connect() as con, con.cursor() as cur:
+    with connection() as con, con.cursor() as cur:
         ensure_kv(cur)
         cur.execute("""SELECT value -> %s FROM "kv" WHERE key = 'versions'""", (name,))
         row = cur.fetchone()
@@ -151,20 +171,13 @@ def _pg_type(s: pd.Series) -> str:
 
 def write_table(name: str, df: pd.DataFrame, cur=None) -> None:
     """Replace a whole table (schema from the frame) in one transaction via COPY."""
-    own = cur is None
-    con = _connect() if own else None
-    cur = con.cursor() if own else cur
-    try:
-        cols = ", ".join(f"{_q(c)} {_pg_type(df[c])}" for c in df.columns)
-        cur.execute(f"DROP TABLE IF EXISTS {_q(name)}")
-        cur.execute(f"CREATE TABLE {_q(name)} ({cols})")
-        _copy(cur, name, df)
-        if own:
-            con.commit()
-    finally:
-        if own:
-            cur.close()
-            con.close()
+    if cur is None:
+        with connection() as con, con.cursor() as c:
+            return write_table(name, df, c)
+    cols = ", ".join(f"{_q(c)} {_pg_type(df[c])}" for c in df.columns)
+    cur.execute(f"DROP TABLE IF EXISTS {_q(name)}")
+    cur.execute(f"CREATE TABLE {_q(name)} ({cols})")
+    _copy(cur, name, df)
     _cache.pop("t:" + name, None)
 
 
@@ -186,7 +199,7 @@ def select(name: str, col: str, value) -> pd.DataFrame:
     hit = _cache.get(f"s:{name}:{col}:{value}")
     if hit and time.time() - hit[0] < CACHE_SECONDS:
         return hit[1]
-    with _connect() as con, con.cursor() as cur:
+    with connection() as con, con.cursor() as cur:
         cur.execute("SELECT to_regclass(%s)", (name,))
         df = _select(cur, f"SELECT * FROM {_q(name)} WHERE {_q(col)} = %s", (value,)) if cur.fetchone()[0] else pd.DataFrame()
         con.commit()
@@ -199,7 +212,7 @@ def kv_get(key: str, default=None):
     hit = _cache.get("k:" + key)
     if hit and time.time() - hit[0] < CACHE_SECONDS:
         return hit[1]
-    with _connect() as con, con.cursor() as cur:
+    with connection() as con, con.cursor() as cur:
         ensure_kv(cur)
         cur.execute('SELECT value FROM "kv" WHERE key = %s', (key,))
         row = cur.fetchone()
@@ -211,18 +224,11 @@ def kv_get(key: str, default=None):
 
 
 def kv_set(key: str, value, cur=None) -> None:
-    own = cur is None
-    con = _connect() if own else None
-    cur = con.cursor() if own else cur
-    try:
-        ensure_kv(cur)
-        cur.execute('INSERT INTO "kv"(key, value, updated_at) VALUES (%s, %s::jsonb, now()) '
-                    'ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()',
-                    (key, json.dumps(value, ensure_ascii=False, default=str)))
-        if own:
-            con.commit()
-    finally:
-        if own:
-            cur.close()
-            con.close()
+    if cur is None:
+        with connection() as con, con.cursor() as c:
+            return kv_set(key, value, c)
+    ensure_kv(cur)
+    cur.execute('INSERT INTO "kv"(key, value, updated_at) VALUES (%s, %s::jsonb, now()) '
+                'ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()',
+                (key, json.dumps(value, ensure_ascii=False, default=str)))
     _cache.pop("k:" + key, None)

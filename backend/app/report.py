@@ -2,6 +2,7 @@
 
     python -m app.report               # usage + data status + headline numbers
     python -m app.report --alert TEXT  # immediate alert (e.g. the refresh job failed)
+    python -m app.report --signals     # breadth extremes newly reached on the latest final session
 
 TELEGRAM_BOT_TOKEN is required. The chat id comes from TELEGRAM_CHAT_ID, or is found
 once from the last message sent to the bot (getUpdates) and remembered in Supabase.
@@ -9,6 +10,7 @@ once from the last message sent to the bot (getUpdates) and remembered in Supaba
 import argparse
 import datetime as dt
 import html
+import math
 import os
 
 import pandas as pd
@@ -103,7 +105,7 @@ def headline_lines() -> list[str]:
     b = store.read("breadth20")
     mm = store.read("market_monitor_daily")
     out = []
-    for src, label in (("public_repo", "미국"), ("kospi", "코스피"), ("kosdaq", "코스닥")):
+    for src, label in (("public_repo", "미국"), ("kospi", "코스피"), ("kosdaq", "코스닥"), ("crypto", "크립토")):
         r = b[b["source"] == src].sort_values("date").tail(1) if len(b) else b
         if len(r):
             out.append(f"{label} 20% 급등 {int(r.bull.iloc[0])} / 급락 {int(r.bear.iloc[0])}")
@@ -111,6 +113,74 @@ def headline_lines() -> list[str]:
     if len(r) and pd.notna(r.t2108.iloc[0]):
         out.append(f"미국 40일선 위 종목 비율 {r.t2108.iloc[0]:.1f}% · 4% 상승 {int(r.up4.iloc[0])} / 하락 {int(r.down4.iloc[0])}")
     return out
+
+
+# ---- breadth signal alerts ---------------------------------------------------------
+US_N = 5000
+# Calibrated count lines per market; mirrors CAL in frontend/lib/defs.ts (US universes scale by size).
+CAL = {"kospi": {"down4": {1000: 225}, "bear": {100: 14}},
+       "kosdaq": {"down4": {1000: 535}, "bear": {100: 55}},
+       "crypto": {"down4": {1000: 320}, "bear": {100: 180}}}
+# market label -> (table, source) pairs; the US Bear count comes from the survivorship-free series.
+MARKETS = {"미국": [("breadth20", "public_repo"), ("market_monitor_daily", "yahoo")],
+           "코스피": [("breadth20", "kospi"), ("market_monitor_daily", "kospi")],
+           "코스닥": [("breadth20", "kosdaq"), ("market_monitor_daily", "kosdaq")],
+           "크립토": [("breadth20", "crypto"), ("market_monitor_daily", "crypto")]}
+
+
+def cnt(base: int, key: str, market: str, n) -> int:
+    lv = CAL.get(market, {}).get(key, {}).get(base)
+    n = n if n and not pd.isna(n) else US_N
+    return lv if lv is not None else max(1, math.ceil(base * min(1, n / US_N) - 1e-9))
+
+
+def conditions(r: dict, market: str) -> dict[str, str]:
+    """Signal code -> message for one row, at the dashboard's default extreme levels."""
+    v = lambda k: r.get(k) if r.get(k) is not None and not pd.isna(r.get(k)) else None  # noqa: E731
+    n, out = r.get("eligible_universe_count"), {}
+    if v("bear") is not None and v("bear") >= (lv := cnt(100, "bear", market, n)):
+        out["bear"] = f"20% 급락 {int(v('bear'))}종목 — 극단적 급락 (기준 {lv})"
+    if v("down4") is not None and v("down4") >= (lv := cnt(1000, "down4", market, n)):
+        out["down4"] = f"4% 하락 {int(v('down4'))}종목 — 극단적 투매 (기준 {lv})"
+    if v("ratio10") is not None and v("ratio10") <= 0.5:
+        out["ratio10_lo"] = f"10일 비율 {v('ratio10'):.2f} — 약세 신호 (≤ 0.5)"
+    elif v("ratio10") is not None and v("ratio10") >= 2:
+        out["ratio10_hi"] = f"10일 비율 {v('ratio10'):.2f} — 강한 매수세 (≥ 2)"
+    if v("t2108") is not None and v("t2108") < 20:
+        out["t2108_lo"] = f"40일선 위 종목 {v('t2108'):.1f}% — 극단적 과매도 (< 20%)"
+    elif v("t2108") is not None and v("t2108") > 80:
+        out["t2108_hi"] = f"40일선 위 종목 {v('t2108'):.1f}% — 과매수 (> 80%)"
+    return out
+
+
+def new_signals(rows: pd.DataFrame, market: str) -> tuple[str, list[str]] | None:
+    """(latest date, messages) for conditions met on the latest row but not on the one before."""
+    rows = rows.sort_values("date")
+    if len(rows) < 2:
+        return None
+    cur, prev = (conditions(r, market) for r in rows.tail(2).iloc[::-1].to_dict("records"))
+    return str(rows["date"].iloc[-1]), [m for k, m in cur.items() if k not in prev]
+
+
+def signals() -> str | None:
+    """Telegram text for newly reached extremes, once per (source, session); provisional
+    (intraday) sources wait for the final values."""
+    st = store.status().get("sources", {})
+    sent = dict(st.get("_signals", {}).get("sent") or {})
+    lines = []
+    for label, pairs in MARKETS.items():
+        for table, src in pairs:
+            df = store.read(table)
+            df = df[df["source"] == src] if len(df) else df
+            if df.empty or st.get(src, {}).get("provisional"):
+                continue
+            hit = new_signals(df, src)
+            if not hit or hit[0] <= sent.get(f"{table}:{src}", ""):
+                continue
+            sent[f"{table}:{src}"] = hit[0]
+            lines += [f"• <b>{label}</b> {hit[0]}: {html.escape(m)}" for m in hit[1]]
+    store.set_source("_signals", sent=sent)
+    return "\n".join(["🔔 <b>시장 폭 신호</b> (기본 강조 기준, 매매 신호 아님)", *lines]) if lines else None
 
 
 def daily() -> str:
@@ -126,10 +196,13 @@ def daily() -> str:
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--alert")
+    ap.add_argument("--signals", action="store_true")
     ap.add_argument("--print", action="store_true", help="print instead of sending")
     a = ap.parse_args()
-    text = f"🚨 <b>시장 폭 모니터</b>\n{html.escape(a.alert)}" if a.alert else daily()
-    if a.print or not TOKEN:
+    text = f"🚨 <b>시장 폭 모니터</b>\n{html.escape(a.alert)}" if a.alert else signals() if a.signals else daily()
+    if not text:
+        print("no new signals")
+    elif a.print or not TOKEN:
         print(text)
     else:
         send(text)

@@ -79,6 +79,17 @@ jobs:
           done
           [ $fails -eq 0 ]
 
+      # Breadth extremes newly reached on a final session (deduped per source and session).
+      - name: Signal alerts
+        if: success() && env.HAS_TELEGRAM == 'true'
+        continue-on-error: true
+        env:
+          DATA_DIR: ${{ github.workspace }}/data
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python -m app.report --signals
+
       # Morning run (after the US close) or manual run: usage + data report to Telegram.
       - name: Daily report
         if: success() && env.HAS_TELEGRAM == 'true' && (github.event.schedule == '15 23 * * *' || github.event_name == 'workflow_dispatch')

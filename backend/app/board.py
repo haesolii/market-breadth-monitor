@@ -30,7 +30,7 @@ BOARDS = {"free": "자유", "market": "시장 토론", "stock": "종목 토론",
 ADMIN_ONLY = {"notice"}
 PAGE = 20
 SECRET = (os.getenv("BOARD_SECRET") or os.getenv("DASHBOARD_PASSWORD") or "local-dev-secret").encode()
-ADMINS = {x.strip() for x in os.getenv("BOARD_ADMINS", "").split(",") if x.strip()}
+ADMINS = {x.strip().lower() for x in os.getenv("BOARD_ADMINS", "").split(",") if x.strip()}
 SESSION_DAYS = 30
 # (seconds between, max per hour) per IP; members get the lighter limits
 LIMITS = {("post", False): (60, 10), ("post", True): (30, 30), ("comment", False): (10, 60), ("comment", True): (5, 200)}
@@ -176,6 +176,20 @@ def check_words(text: str) -> None:
         raise HTTPException(400, f"금지어가 포함되어 있습니다: {hit}")
 
 
+def nick_key(nick: str) -> str:
+    """Comparison form of a nickname: no spaces, lower case ('개미 왕' = '개미왕', 'Ant' = 'ant')."""
+    return re.sub(r"\s", "", nick).lower()
+
+
+NICK_KEY_SQL = "LOWER(REPLACE(nickname, ' ', ''))"
+
+
+def check_member_nick(t: _Tx, nick: str) -> None:
+    """Guests cannot post under a member's nickname."""
+    if t.one(f"SELECT id FROM board_users WHERE {NICK_KEY_SQL} = %s", (nick_key(nick),)):
+        raise HTTPException(400, "회원이 쓰는 닉네임입니다. 다른 닉네임을 쓰세요")
+
+
 def check_nick(nick: str, admin: bool) -> None:
     n = re.sub(r"[\s._-]", "", nick).lower()
     if not admin and any(r in n for r in RESERVED):
@@ -207,7 +221,7 @@ class Who:
         uid = session_uid(request.cookies.get("bd_session"))
         self.user = t.one("SELECT id, username, nickname, banned FROM board_users WHERE id = %s", (uid,)) if uid else None
         self.uid = self.user["id"] if self.user else None
-        self.admin = bool(self.user and self.user["username"] in ADMINS)
+        self.admin = bool(self.user and self.user["username"].lower() in ADMINS)
 
 
 def _public(row: dict, who: Who | None = None) -> dict:
@@ -290,15 +304,17 @@ def me(request: Request):
 def signup(body: SignupIn, request: Request, response: Response):
     if body.website:
         raise HTTPException(400, "잘못된 요청")
-    nick = body.nickname.strip()
+    nick, username = " ".join(body.nickname.split()), body.username.lower()  # IDs are case-insensitive
     check_words(nick)
-    check_nick(nick, body.username in ADMINS)
+    check_nick(nick, username in ADMINS)
     with tx() as t:
         check_ban(t, client_ip(request), None)
-        if t.one("SELECT id FROM board_users WHERE username = %s OR nickname = %s", (body.username, nick)):
-            raise HTTPException(409, "이미 쓰는 아이디 또는 닉네임입니다")
+        if t.one("SELECT id FROM board_users WHERE LOWER(username) = %s", (username,)):
+            raise HTTPException(409, "이미 쓰는 아이디입니다")
+        if t.one(f"SELECT id FROM board_users WHERE {NICK_KEY_SQL} = %s", (nick_key(nick),)):
+            raise HTTPException(409, "이미 쓰는 닉네임입니다 (띄어쓰기·대소문자만 다른 닉네임도 같은 것으로 봅니다)")
         row = t.one("INSERT INTO board_users (username, nickname, pw, created_at) VALUES (%s, %s, %s, %s) RETURNING id",
-                    (body.username, nick, hash_pw(body.password), now()))
+                    (username, nick, hash_pw(body.password), now()))
     _session(response, row["id"])
     return {"ok": True, "nickname": nick}
 
@@ -306,7 +322,7 @@ def signup(body: SignupIn, request: Request, response: Response):
 @router.post("/login")
 def login(body: LoginIn, response: Response):
     with tx() as t:
-        u = t.one("SELECT id, pw, banned FROM board_users WHERE username = %s", (body.username,))
+        u = t.one("SELECT id, pw, banned FROM board_users WHERE LOWER(username) = %s", (body.username.lower(),))
     if not u or not check_pw(body.password, u["pw"]):
         raise HTTPException(401, "아이디 또는 비밀번호가 맞지 않습니다")
     if u["banned"]:
@@ -374,6 +390,7 @@ def create_post(body: PostIn, request: Request):
             raise HTTPException(400, "비회원은 닉네임(2자 이상)과 비밀번호(4자 이상)를 입력하세요")
         if not w.user:
             check_nick(body.nick, False)
+            check_member_nick(t, body.nick)
         check_rate(t, "post", w.ip, bool(w.user))
         title, text = body.title.strip(), body.body.strip()
         if not w.user:
@@ -470,6 +487,7 @@ def add_comment(pid: int, body: CommentIn, request: Request):
             raise HTTPException(400, "비회원은 닉네임(2자 이상)과 비밀번호(4자 이상)를 입력하세요")
         if not w.user:
             check_nick(body.nick, False)
+            check_member_nick(t, body.nick)
         check_rate(t, "comment", w.ip, bool(w.user))
         text = body.body.strip() if w.user else guest_clean(body.body.strip())
         check_words(text)

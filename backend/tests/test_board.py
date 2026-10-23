@@ -82,3 +82,15 @@ def test_admin_tools_only_for_admins(monkeypatch):
         assert "ip" not in c.get(f"/api/board/posts/{pid}").json()["post"]                 # full IPs never shown
     assert admin.get("/api/board/admin/reports").status_code == 200 and admin.get("/api/board/me").json()["admin"]
     assert admin.get(f"/api/board/posts/{pid}").json()["post"]["ip"] == "3.3.3.2"
+
+
+def test_ids_and_nicknames_unique_ignoring_case_and_spaces(monkeypatch):
+    monkeypatch.setattr(board, "LIMITS", {k: (0, 1000) for k in board.LIMITS})
+    c = _c("4.4.4.4")
+    s = lambda u, n: c.post("/api/board/signup", json={"username": u, "nickname": n, "password": "password1"}).status_code  # noqa: E731
+    assert s("Trader9", "주식왕") == 200
+    assert s("TRADER9", "다른닉") == 409 and s("trader10", "주식 왕") == 409               # case / spaces don't make a new name
+    assert c.post("/api/board/login", json={"username": "trader9", "password": "password1"}).status_code == 200
+    g = _c("4.4.4.5")
+    r = g.post("/api/board/posts", json={"board": "free", "title": "t", "body": "b", "nick": "주식 왕", "password": "1234"})
+    assert r.status_code == 400                                                              # guests can't wear a member's name

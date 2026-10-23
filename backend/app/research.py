@@ -133,18 +133,55 @@ WEAK = {"bear", "down4", "quarter_down25", "month_down25", "month_down50", "day3
 SCORE_WIN = 252
 
 
+# Indicators that move together (rank correlation ~0.7-0.9) share one vote in the health score.
+GROUPS = [["up4", "down4", "ratio5", "ratio10"], ["bull", "bear"], ["month_up25", "month_down25", "month_up50", "month_down50"],
+          ["quarter_up25", "quarter_down25"], ["day34_up13", "day34_down13", "day34_diff"], ["t2108"]]
+
+
 def health_score(ind: pd.DataFrame, cols: list[str], win: int = SCORE_WIN) -> pd.Series:
-    """0-100 market health per date: the mean over indicators of each one's percentile within its own
-    trailing `win` sessions (weak-side indicators inverted). 50 = an ordinary day for this market.
-    Trailing only, so a past score used only data known on that date."""
+    """0-100 market health per date: each indicator's percentile within its own trailing `win` sessions
+    (weak-side indicators inverted), averaged within its GROUPS family, then the families averaged with
+    equal weight. 50 = an ordinary day for this market. Trailing only: a past score used only data
+    known on that date. A coincident reading (it moves with the market), not a forecast."""
     df = ind.sort_values("date").set_index("date")
-    pct = []
-    for c in cols:
-        if c not in df or df[c].notna().sum() < 60:
-            continue
-        p = df[c].rolling(win, min_periods=60).rank(pct=True) * 100
-        pct.append(100 - p if c in WEAK else p)
-    return pd.concat(pct, axis=1).mean(axis=1).rename("score") if pct else pd.Series(dtype=float, name="score")
+    fams = []
+    for g in [[c for c in grp if c in cols] for grp in GROUPS] + [[c for c in cols if not any(c in grp for grp in GROUPS)]]:
+        pct = []
+        for c in g:
+            if c not in df or df[c].notna().sum() < 60:
+                continue
+            p = df[c].rolling(win, min_periods=60).rank(pct=True) * 100
+            pct.append(100 - p if c in WEAK else p)
+        if pct:
+            fams.append(pd.concat(pct, axis=1).mean(axis=1))
+    return pd.concat(fams, axis=1).mean(axis=1).rename("score") if fams else pd.Series(dtype=float, name="score")
+
+
+SCORE_COLS = ["bull", "bear", "up4", "down4", "ratio5", "ratio10", "quarter_up25", "quarter_down25", "month_up25", "month_down25",
+              "month_up50", "month_down50", "day34_up13", "day34_down13", "day34_diff", "t2108"]
+
+
+def indicator_frame(source: str) -> pd.DataFrame:
+    """Market Monitor rows of a source with that market's 20% Bull / Bear counts merged in."""
+    from . import store
+
+    mm, b20 = store.read("market_monitor_daily"), store.read("breadth20")
+    mm = mm[mm["source"] == source] if len(mm) else mm
+    if len(b20) and len(mm):
+        mm = mm.merge(b20[b20["source"] == source][["date", "bull", "bear"]], on="date", how="left")
+    return mm.sort_values("date").reset_index(drop=True) if len(mm) else mm
+
+
+def score_now(source: str) -> dict | None:
+    """Latest health score of a market with its value 5 and 20 sessions earlier."""
+    ind = indicator_frame(source)
+    if ind.empty:
+        return None
+    s = health_score(ind, SCORE_COLS).dropna()
+    if s.empty:
+        return None
+    at = lambda k: round(float(s.iloc[-1 - k]), 1) if len(s) > k else None  # noqa: E731
+    return {"date": str(s.index[-1]), "score": at(0), "score_5d_ago": at(5), "score_20d_ago": at(20), "prev": at(1)}
 
 
 LAGS = range(-20, 21)

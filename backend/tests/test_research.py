@@ -69,6 +69,8 @@ def test_health_score_inverts_weak_side():
     sc = research.health_score(ind, ["up4", "down4"])
     assert sc.iloc[:59].isna().all() and sc.iloc[-1] == 50.0          # rising up4 (100) + rising down4 (0)
     assert research.health_score(ind, ["up4"]).iloc[-1] == 100.0
+    t = ind.assign(t2108=range(100))                                  # families vote equally: (50 + 100) / 2
+    assert research.health_score(t, ["up4", "down4", "t2108"]).iloc[-1] == 75.0
 
 
 def test_lead_lag_finds_the_lead():

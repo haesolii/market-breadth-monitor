@@ -84,6 +84,21 @@ def refresh() -> dict:
     return {"latest_date": str(out["date"].max()) if len(out) else None, "filings": len(out)}
 
 
+def collapse(df: pd.DataFrame) -> pd.DataFrame:
+    """One row per company per day: a company often files the consolidated and separate results, a
+    subsidiary's results and corrections ([기재정정] / [첨부추가]) together. Main row = the company's own
+    consolidated original; the rest are counted (extra) and flagged (correction / subsidiary)."""
+    if df.empty:
+        return df.assign(extra=0, correction=False, subsidiary=False)
+    df = df.assign(correction=df["title"].str.startswith("["), subsidiary=df["title"].str.contains("자회사", regex=False))
+    df["_rank"] = df["correction"] * 4 + df["subsidiary"] * 2 + ~df["title"].str.startswith("연결")
+    g = df.sort_values("_rank").groupby(["code", "date"], sort=False)
+    out = g.head(1).set_index(["code", "date"])
+    out["extra"] = g.size() - 1
+    out["correction"], out["subsidiary"] = g["correction"].any(), g["subsidiary"].any()
+    return out.reset_index().drop(columns="_rank").sort_values(["date", "rcept_no"], ascending=False)
+
+
 def view(days: int = 30, code: str = "") -> list[dict]:
     df = store.read("dart_prelim")
     if df.empty:
@@ -91,4 +106,4 @@ def view(days: int = 30, code: str = "") -> list[dict]:
     df = df.copy()
     df["date"] = pd.to_datetime(df["date"]).dt.date
     df = df[df["code"] == code] if code else df[df["date"] >= dt.date.today() - dt.timedelta(days=days)]
-    return [{**r, "url": VIEW + r["rcept_no"]} for r in _rows(df)]
+    return [{**r, "url": VIEW + r["rcept_no"]} for r in _rows(collapse(df))]

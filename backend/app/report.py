@@ -17,7 +17,7 @@ import re
 import pandas as pd
 import requests
 
-from . import remote, store
+from . import flows, remote, research, store
 from .market_calendar import latest_complete_session
 
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
@@ -113,7 +113,32 @@ def headline_lines() -> list[str]:
     r = mm[mm["source"] == "yahoo"].sort_values("date").tail(1) if len(mm) else mm
     if len(r) and pd.notna(r.t2108.iloc[0]):
         out.append(f"미국 40일선 위 종목 비율 {r.t2108.iloc[0]:.1f}% · 4% 상승 {int(r.up4.iloc[0])} / 하락 {int(r.down4.iloc[0])}")
+    scores = [f"{label} {sc['score']:.0f}" + (f"(5일 전 {sc['score_5d_ago']:.0f})" if sc["score_5d_ago"] is not None else "")
+              for src, label in SCORE_MARKETS.items() if (sc := research.score_now(src))]
+    if scores:
+        out.append("종합 점수 " + " · ".join(scores))
+    mk = store.read("kr_flow_market")
+    if len(mk):
+        last = mk[mk["date"] == mk["date"].max()]
+        out += [f"{'코스피' if m.market == 'kospi' else '코스닥'} 순매수 {m.date}: 외국인 {m.foreign:+,.0f}억 · 기관 {m.inst:+,.0f}억 · 개인 {m.indiv:+,.0f}억"
+                for m in last.itertuples()]
     return out
+
+
+SCORE_MARKETS = {"yahoo": "미국", "kospi": "코스피", "kosdaq": "코스닥", "crypto": "크립토"}
+SCORE_LO, SCORE_HI = 30, 70
+
+
+def score_signal(sc: dict | None) -> str | None:
+    """Message when the health score crossed into the weak (< 30) or strong (>= 70) zone today."""
+    if not sc or sc["prev"] is None:
+        return None
+    v, p = sc["score"], sc["prev"]
+    if v < SCORE_LO <= p:
+        return f"종합 점수 {v:.0f} — 폭넓은 약세 구간 진입 (< {SCORE_LO})"
+    if v >= SCORE_HI > p:
+        return f"종합 점수 {v:.0f} — 폭넓은 강세 구간 진입 (≥ {SCORE_HI})"
+    return None
 
 
 # ---- breadth signal alerts ---------------------------------------------------------
@@ -129,14 +154,10 @@ MARKETS = {"미국": [("breadth20", "public_repo"), ("market_monitor_daily", "ya
            "크립토": [("breadth20", "crypto"), ("market_monitor_daily", "crypto")]}
 
 
-# A "broad" reading needs at least this many stocks: a calibrated 1-3 is noise, not breadth.
-MIN_N = 5
-
-
 def cnt(base: int, key: str, market: str, n) -> int:
     lv = CAL.get(market, {}).get(key, {}).get(base)
     n = n if n and not pd.isna(n) else US_N
-    return max(MIN_N, lv if lv is not None else math.ceil(base * min(1, n / US_N) - 1e-9))
+    return lv if lv is not None else max(1, math.ceil(base * min(1, n / US_N) - 1e-9))
 
 
 def conditions(r: dict, market: str) -> dict[str, str]:
@@ -184,6 +205,12 @@ def signals() -> str | None:
                 continue
             sent[f"{table}:{src}"] = hit[0]
             lines += [f"• <b>{label}</b> {hit[0]}: {html.escape(m)}" for m in hit[1]]
+    for src, label in SCORE_MARKETS.items():
+        sc = None if st.get(src, {}).get("provisional") else research.score_now(src)
+        msg = score_signal(sc)
+        if msg and sc["date"] > sent.get(f"score:{src}", ""):
+            sent[f"score:{src}"] = sc["date"]
+            lines.append(f"• <b>{label}</b> {sc['date']}: {html.escape(msg)}")
     store.set_source("_signals", sent=sent)
     return "\n".join(["🔔 <b>시장 폭 신호</b> (기본 강조 기준, 매매 신호 아님)", *lines]) if lines else None
 

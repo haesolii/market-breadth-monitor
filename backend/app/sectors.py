@@ -254,7 +254,7 @@ def history(market: str, days: int = 252, picked: list[str] | None = None, top: 
     cm = w[picked].corr(min_periods=max(5, len(w) // 3)).round(2)
     return {"market": market, "days": len(w), "dates": [str(d) for d in w.index], "picked": picked,
             "series": {c: [round(float(v), 2) for v in level[c]] for c in picked}, "stats": stats,
-            "breadth": {c: [None if pd.isna(v) else round(float(v), 1) for v in ab[c]] for c in picked if c in ab},
+            "breadth": {c: [None if pd.isna(v) else round(float(v), 1) for v in ab[c].rolling(5, min_periods=1).mean()] for c in picked if c in ab},  # 5-day mean: small sectors jump 0 <-> 100
             "rrg": rrg(full, [c for c in picked if c != ALL]),
             "corr": {"sectors": picked, "matrix": [[None if pd.isna(v) else float(v) for v in row] for row in cm.to_numpy()]}}
 
@@ -267,6 +267,16 @@ def _last(ab: pd.DataFrame, sec: str, back: int) -> float | None:
 
 
 RRG_SMOOTH, RRG_MOM, RRG_TAIL, RRG_STEP = 50, 10, 8, 5
+QUADRANT = {(True, True): "주도", (True, False): "약화", (False, False): "부진", (False, True): "개선"}
+
+
+def rotation(market: str, top: int = 10) -> list[dict]:
+    """Where the largest sectors sit on the RRG now, with their share of stocks above the 40-day average."""
+    h = history(market, 252, top=top)
+    st = {x["sector"]: x for x in h["stats"]}
+    return [{"sector": sec, "quadrant": QUADRANT[(t[-1][0] >= 100, t[-1][1] >= 100)], "rs_ratio": t[-1][0], "rs_momentum": t[-1][1],
+             "above40_pct": st.get(sec, {}).get("above"), "above40_20d_ago": st.get(sec, {}).get("above20")}
+            for sec, t in h["rrg"]["tails"].items() if t]
 
 
 def rrg(daily: pd.DataFrame, picked: list[str]) -> dict:

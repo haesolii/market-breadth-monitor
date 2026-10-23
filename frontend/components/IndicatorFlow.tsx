@@ -141,7 +141,7 @@ export function IndicatorFlow() {
           <div className="flex flex-wrap items-baseline gap-2 text-xs text-zinc-300">
             <span>{SCORE} (시장 건강도 0~100)</span>
             {sNow && <span className={`font-mono text-sm ${sNow.last >= 70 ? "text-emerald-400" : sNow.last < 30 ? "text-red-400" : "text-zinc-100"}`}>{sNow.last.toFixed(0)}</span>}
-            <span className="text-[11px] text-zinc-500">16개 지표 각각의 최근 1년 백분위 평균 (하락형 지표는 뒤집음) · 50 = 이 시장의 보통 날 · 70↑ 폭넓은 강세 · 30↓ 폭넓은 약세 · 그날까지의 데이터만 사용</span>
+            <span className="text-[11px] text-zinc-500">지표별 최근 1년 백분위(하락형은 뒤집음)를 비슷한 지표끼리 묶어 6개 묶음(단기·5일 급등락·월간·분기·34일·40일선)이 같은 비중 · 50 = 이 시장의 보통 날 · 70↑ 폭넓은 강세 · 30↓ 폭넓은 약세 · 시장과 함께 움직이는 동행 지표이며 예측용이 아님 (아래 선행·후행 분석 참고)</span>
           </div>
           <ScoreChart dates={dates} score={score} />
         </div>

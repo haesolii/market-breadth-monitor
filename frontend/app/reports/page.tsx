@@ -196,7 +196,8 @@ function Earnings() {
   );
 }
 
-type Dart = { rcept_no: string; date: string; code: string; name: string; market: string; title: string; react: number | null; ret_since: number | null; url: string };
+type Dart = { rcept_no: string; date: string; code: string; name: string; market: string; title: string; react: number | null; ret_since: number | null; url: string;
+  extra: number; correction: boolean; subsidiary: boolean };
 
 function DartPrelim() {
   const [days, setDays] = useSetting("reports.dart.days", "30");
@@ -218,13 +219,15 @@ function DartPrelim() {
               <tr key={r.rcept_no} className="border-t border-zinc-900 text-center hover:bg-zinc-900">
                 <td className="text-left">{r.date}</td>
                 <td className="text-left font-sans"><Link className="text-sky-300 hover:underline" href={stockHref(r.code, r.market)}>{r.name}</Link> <span className="text-zinc-500">{r.code}</span></td>
-                <td className="text-left font-sans"><a className="hover:underline" href={r.url} target="_blank" rel="noreferrer">{r.title}</a></td>
+                <td className="text-left font-sans"><a className="hover:underline" href={r.url} target="_blank" rel="noreferrer">{r.title}</a>
+                  {r.correction && <span className="ml-1 rounded bg-amber-900/60 px-1 text-[10px] text-amber-200">정정</span>}
+                  {r.extra > 0 && <span className="ml-1 text-[10px] text-zinc-500" title={r.subsidiary ? "같은 날 별도·자회사 실적 공시 포함" : "같은 날 함께 낸 공시"}>외 {r.extra}건{r.subsidiary ? " (자회사 포함)" : ""}</span>}</td>
                 <td className={tone(r.react)}>{pct(r.react)}</td><td className={tone(r.ret_since)}>{pct(r.ret_since)}</td>
               </tr>
             ))}</tbody>
           </table>
           {data && !data.rows.length && <div className="py-6 text-center text-xs text-zinc-500">해당 기간 잠정실적 공시 없음</div>}
-          <div className="mt-1 text-[11px] text-zinc-500">DART 목록 API는 실적 수치를 주지 않으므로 공시 제목을 누르면 원문(매출·영업이익)이 열립니다.</div>
+          <div className="mt-1 text-[11px] text-zinc-500">DART 목록 API는 실적 수치를 주지 않으므로 공시 제목을 누르면 원문(매출·영업이익)이 열립니다. 같은 회사가 같은 날 낸 연결·별도·자회사·정정 공시는 한 줄로 묶었습니다 (월별 실적을 공시하는 회사는 매달 나옴).</div>
         </div>
       )}
     </Panel>

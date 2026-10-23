@@ -14,7 +14,7 @@ import os
 
 import pandas as pd
 
-from . import analyst, earnings, etf, macro, sectors, store, world
+from . import analyst, dart, earnings, etf, flows, macro, research, sectors, store, world
 
 MODEL = "claude-opus-5-5"
 KST = dt.timezone(dt.timedelta(hours=9))
@@ -25,7 +25,10 @@ SYSTEM = """당신은 개인 투자 연구용 대시보드의 시장 요약을 �
 - 매수·매도 권유, 목표가 제시, 투자 판단 표현을 쓰지 않습니다. 관찰과 해석만 씁니다.
 - 매크로 발표는 "발표값(직전 대비) → 발표일 S&P 500·10년물 반응"을 함께 적어, 시장이 어떻게 받아들였는지 설명합니다.
 - 시장 폭(breadth) 지표의 극단값(Bear 급증, 10일 비율 0.5 이하/2 이상, T2108 20 미만/80 초과)은 반드시 언급합니다.
-- 형식: 마크다운. "## 한눈에" (3줄 이내) 다음 "## 시장 폭", "## 매크로 발표와 시장 반응", "## 섹터", "## 리포트·실적·ETF", "## 체크포인트" 순서.
+- health_score는 시장 폭 지표 6개 묶음의 1년 백분위 평균(0~100, 50 = 보통, 70↑ 폭넓은 강세, 30↓ 폭넓은 약세)이며 시장과 함께 움직이는 동행 지표입니다. 예측처럼 쓰지 않습니다.
+- 섹터 rotation의 quadrant는 시장 대비 상대강도(주도·약화·부진·개선)이고, above40_pct는 섹터 안 40일선 위 종목 비율입니다.
+- 한국 수급(kr_flows)은 억원 단위 순매수입니다. market_today는 시장 전체, 나머지는 시가총액 상위 300종목 합계입니다.
+- 형식: 마크다운. "## 한눈에" (3줄 이내) 다음 "## 시장 폭", "## 매크로 발표와 시장 반응", "## 섹터", "## 한국 수급", "## 리포트·실적·ETF", "## 체크포인트" 순서.
   해당 데이터가 비어 있는 절은 생략합니다. 전체 600단어 이내, 각 절은 짧은 글머리표."""
 
 
@@ -54,6 +57,9 @@ def context() -> dict:
             row.update(mm_date=str(r["date"]), up4=_f(r["up4"]), down4=_f(r["down4"]), ratio10=_f(r["ratio10"]),
                        t2108=_f(r["t2108"]), quarter_up25=_f(r["quarter_up25"]), quarter_down25=_f(r["quarter_down25"]),
                        eligible=_f(r["eligible_universe_count"]))
+        sc = research.score_now(src) if src != "public_repo" else None
+        if sc:
+            row.update(health_score=sc["score"], health_score_5d_ago=sc["score_5d_ago"], health_score_20d_ago=sc["score_20d_ago"])
         if row:
             breadth[label] = row
     w = world.summary()
@@ -87,8 +93,27 @@ def context() -> dict:
                                  "most_covered": _recs(pd.DataFrame(a["top_covered"]), ["name", "n", "react", "upside"], 6)},
         "us_earnings_3d": _recs(rep, ["date", "symbol", "name", "surprise", "react", "react_days"], 10),
         "us_earnings_next_5d": _recs(pd.DataFrame(e["upcoming"]), ["date", "symbol", "name", "time"], 15),
+        "sector_rotation": {MARKETS[m]: sectors.rotation(m) for m in ("yahoo", "kospi", "kosdaq")},
+        "kr_flows": _flows(),
+        "kr_prelim_earnings_3d": [{k: r.get(k) for k in ("date", "name", "title", "react", "correction")}
+                                  for r in sorted(dart.view(3), key=lambda r: -abs(r.get("react") or 0))[:10]],
         "active_etf_consensus_3d": [{"name": c["name"], "buy_funds": len(c["buy"]), "sell_funds": len(c["sell"])} for c in ef["consensus"][:10]],
     }
+
+
+def _flows() -> dict:
+    f = flows.overview(days=5)
+    if not f["dates"]:
+        return {}
+    last = f["market"][-2:] if f["market"] else []
+    sec = sorted(f["sectors"], key=lambda r: r["foreign5"])
+    pick = lambda rows, who: [{"name": r["name"], who + "_5d": r[who], "foreign_hold_chg_20d": r["hold_chg20"]} for r in rows[:5]]  # noqa: E731
+    return {"market_today": [{k: r[k] for k in ("date", "market", "foreign", "inst", "indiv")} for r in last],
+            "top300_5d_total": {k: round(sum(v), 1) for k, v in f["daily"].items()},
+            "sectors_foreign_buy_5d": [(r["sector"], r["foreign5"], r["inst5"]) for r in sec[-4:][::-1]],
+            "sectors_foreign_sell_5d": [(r["sector"], r["foreign5"], r["inst5"]) for r in sec[:4]],
+            "foreign_buy": pick(f["stocks"]["foreign_nlargest"], "foreign"), "foreign_sell": pick(f["stocks"]["foreign_nsmallest"], "foreign"),
+            "inst_buy": pick(f["stocks"]["inst_nlargest"], "inst"), "inst_sell": pick(f["stocks"]["inst_nsmallest"], "inst")}
 
 
 def write(ctx: dict, slot: str) -> str:

@@ -49,10 +49,12 @@ def detail(ticker: str, market: str | None = None) -> dict | None:
 def _etf(key: str, kr: bool) -> dict:
     """Funds holding the stock now (Korean CU lists name holdings, ARK lists tickers) and their changes."""
     latest, ch, fl = store.read("etf_latest"), store.read("etf_changes"), store.read("etf_funds")
+    if latest.empty:
+        return {"holders": [], "changes": []}
     names = dict(zip(fl["etf"], fl["name"])) if len(fl) else {}
     col = "name" if kr else "ticker"
     h = latest[latest[col] == key] if len(latest) else latest
-    c = ch[ch[col] == key].sort_values("date", ascending=False) if len(ch) else ch
+    c = ch[ch[col] == key].sort_values("date", ascending=False) if len(ch) else pd.DataFrame(columns=["date", "etf", "kind", "shares_prev", "shares", "weight_prev", "weight"])
     return {"holders": [{**r, "etf_name": names.get(r["etf"], r["etf"])} for r in _rows(h.sort_values("weight", ascending=False)[["etf", "shares", "weight", "date"]])],
             "changes": [{**r, "etf_name": names.get(r["etf"], r["etf"])} for r in _rows(c[["date", "etf", "kind", "shares_prev", "shares", "weight_prev", "weight"]].head(40))]}
 

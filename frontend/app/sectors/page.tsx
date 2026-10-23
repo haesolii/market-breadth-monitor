@@ -120,7 +120,7 @@ function SectorTrend({ market, picked, setPicked }: { market: string; picked: st
             JdK RRG 공식은 비공개라 50일 평균 대비 상대강도·10일 변화로 근사했습니다.
           </div>
         </Panel>
-        <Panel title="섹터별 40일선 위 종목 비율 (섹터의 T2108)">
+        <Panel title="섹터별 40일선 위 종목 비율 (섹터의 T2108, 5일 평균)">
           <TimeChart dates={data.dates} series={data.picked.filter((k) => data.breadth[k]).map((k) => ({ name: k, data: data.breadth[k], color: LINE[data.picked.indexOf(k) % LINE.length], type: "line" as const }))} height={360} />
           <div className="text-[11px] text-zinc-500">지수(시가총액 가중)는 대형주 몇 개로 움직일 수 있습니다. 이 비율은 섹터 안 종목이 고르게 오르는지(동일 가중)를 봅니다. 지수는 오르는데 비율이 떨어지면 소수 종목만 끌어올리는 상태입니다.</div>
         </Panel>

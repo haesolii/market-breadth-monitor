@@ -18,3 +18,13 @@ def test_dart_filter_and_two_day_reaction():
     bars = pd.DataFrame({"date": d, "ticker": "A", "close": [100.0, 110.0, 121.0]})
     out = dart.react(pd.DataFrame({"code": ["A"], "date": [dt.date(2026, 10, 21)]}), bars)
     assert round(out["react"].iloc[0], 6) == 21.0 and round(out["ret_since"].iloc[0], 6) == 21.0  # 20th close -> 23rd close
+
+
+def test_dart_collapse_same_day_filings():
+    d = dt.date(2026, 10, 19)
+    df = pd.DataFrame({"rcept_no": ["1", "2", "3", "4"], "code": ["A", "A", "A", "B"], "date": [d, d, d, d],
+                       "title": ["영업(잠정)실적(공정공시)(자회사의 주요경영사항)", "영업(잠정)실적(공정공시)",
+                                 "연결재무제표기준영업(잠정)실적(공정공시)", "[기재정정]영업(잠정)실적(공정공시)"]})
+    out = dart.collapse(df).set_index("code")
+    assert out.loc["A", "rcept_no"] == "3" and out.loc["A", "extra"] == 2 and out.loc["A", "subsidiary"]
+    assert out.loc["B", "correction"] and out.loc["B", "extra"] == 0

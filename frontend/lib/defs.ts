@@ -98,12 +98,18 @@ const CAL: Record<string, Record<string, Record<number, number>>> = {
     quarter_up25: { 200: 5, 500: 25 }, month_up25: { 200: 40 }, month_down25: { 200: 45 },
     month_up50: { 20: 3 }, month_down50: { 20: 1 }, bear: { 50: 40, 100: 180, 150: 245 } },
 };
-/** A "broad" reading needs at least this many stocks: a calibrated 1-3 (e.g. KOSPI 50% movers) is noise. */
-export const MIN_N = 5;
 /** A US count threshold of indicator `key` expressed for this row's market (rows carry `market`). */
 export const cnt = (base: number, x: Vals, key: string) =>
-  Math.max(MIN_N, CAL[String((x as Record<string, unknown>).market)]?.[key]?.[base]
-    ?? Math.ceil(base * scaleOf(x) - 1e-9));  // round up: small markets stay conservative
+  CAL[String((x as Record<string, unknown>).market)]?.[key]?.[base]
+  ?? Math.max(1, Math.ceil(base * scaleOf(x) - 1e-9));  // round up: small markets stay conservative
+/** 50%-in-a-month counts: the published level (US 20) is reached on ~75% of days in every market
+ * (measured 2021-10 ~ 2026-10), so it marks "some movers", not an extreme. The extreme tier is each
+ * market's own 90th percentile over the same period. */
+const RARE: Record<string, { month_up50: number; month_down50: number }> = {
+  yahoo: { month_up50: 70, month_down50: 50 }, nasdaq: { month_up50: 58, month_down50: 47 },
+  kospi: { month_up50: 14, month_down50: 2 }, kosdaq: { month_up50: 48, month_down50: 5 }, crypto: { month_up50: 26, month_down50: 5 },
+};
+const rare = (x: Vals, key: "month_up50" | "month_down50") => RARE[String((x as Record<string, unknown>).market)]?.[key] ?? Infinity;
 
 export type Levels = Record<string, [number | null, number | null]>;
 /** Default highlight levels; count levels scaled to the universe size `n` (latest eligible count). */
@@ -154,10 +160,11 @@ export const READ: Record<string, { rule: (x: Vals) => string; read: (v: number,
     read: (v, x) => v >= cnt(200, x, "month_up25") ? "🟢 강한 상승 확산" : v >= at(x, "month_down25") ? "🟢 상승 우위" : v >= at(x, "month_down25") / 2 ? "🟠 상승 탄력 약함" : "🔴 단기 상승 탄력 부족" },
   month_down25: { rule: () => "상승 종목 수와 비교해 하락 확산 평가",
     read: (v, x) => v > 2 * at(x, "month_up25") ? "🔴 하락 종목 우세" : v > at(x, "month_up25") ? "🟠 하락 우위" : "🟢 상승 우위" },
-  month_up50: { rule: (x) => `${f(cnt(20, x, "month_up50"))}↑ 과열, 하락 종목 수와 비교`,
-    read: (v, x) => v >= cnt(20, x, "month_up50") ? "🟢 강한 상승 확산 (과열 주의)" : v < at(x, "month_down50") ? "🔴 강한 상승 종목 희소" : "⚪ 보통" },
-  month_down50: { rule: (x) => `${f(cnt(20, x, "month_down50"))}개 초과 시 극단적 약세, 역추세 반등 관찰`,
-    read: (v, x) => v > cnt(20, x, "month_down50") ? "🟠 극단적 하락, 반등 가능성 관찰" : "⚪ 보통" },
+  month_up50: { rule: (x) => `${f(rare(x, "month_up50"))}↑ 과열(이 시장 상위 10%), ${f(cnt(20, x, "month_up50"))}↑ 급등 종목 있음(평소 수준)`,
+    read: (v, x) => v >= rare(x, "month_up50") ? "🟢 강한 상승 확산 (상위 10%, 과열 주의)" : v >= cnt(20, x, "month_up50") ? "⚪ 급등 종목 있음 (평소 수준)"
+      : v < at(x, "month_down50") ? "🔴 강한 상승 종목 희소" : "⚪ 보통" },
+  month_down50: { rule: (x) => `${f(rare(x, "month_down50"))}↑ 극단적 약세(이 시장 상위 10%), 역추세 반등 관찰`,
+    read: (v, x) => v >= rare(x, "month_down50") ? "🟠 극단적 하락 (상위 10%), 반등 가능성 관찰" : v > cnt(20, x, "month_down50") ? "⚪ 급락 종목 있음 (평소 수준)" : "⚪ 보통" },
   day34_up13: { rule: () => "상승 종목의 증가·감소 추세 확인",
     read: (v, x) => v >= at(x, "day34_down13") ? "🟢 상승 종목 우위" : v >= at(x, "day34_down13") / 3 ? "🟠 반등 종목 존재하나 우세하지 않음" : "🔴 상승 종목 희소" },
   day34_down13: { rule: () => "상승 종목과 비교해 시장 폭 판단",

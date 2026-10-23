@@ -78,3 +78,27 @@ def test_cdn_cache_headers(monkeypatch):
     assert r.headers["Vercel-CDN-Cache-Control"].startswith("max-age=60") and r.headers["Vary"] == "X-Mb-Key"
     assert "set-cookie" not in r.headers  # a Set-Cookie would make it uncacheable
     assert "Vercel-CDN-Cache-Control" not in c.get("/api/visit", headers=key).headers
+
+
+def test_new_endpoints_empty_and_stock():
+    c = TestClient(main.app)
+    assert c.get("/api/flows").json()["dates"] == []
+    assert c.get("/api/dart").json()["rows"] == []
+    assert c.get("/api/stock?ticker=NOPE").status_code == 404
+    store.write("sector_map", pd.DataFrame({"market": "kospi", "ticker": ["005930", "000660"], "name": ["삼성전자", "SK하이닉스"],
+                                            "exchange": "KOSPI", "sector": "반도체", "industry": "", "size": [3.0, 1.0], "close": 1.0,
+                                            "r1d": [1.0, 2.0], "r1w": None, "r1m": None, "r3m": None, "r1y": None, "ytd": None,
+                                            "date": dt.date(2026, 10, 23)}))
+    assert [h["ticker"] for h in c.get("/api/stock/search?q=삼성").json()] == ["005930"]
+    d = c.get("/api/stock?ticker=005930").json()
+    assert d["ranks"]["r1d"] == {"rank": 2, "of": 2, "mkt_pctile": 50.0} and len(d["peers"]) == 2 and d["flow"] == {"dates": []}
+
+
+def test_leadlag_endpoint():
+    d = [dt.date(2024, 1, 1) + dt.timedelta(days=i) for i in range(120)]
+    store.upsert("market_monitor_daily", pd.DataFrame({"date": d, "source": "yahoo", "t2108": [float(i % 30) for i in range(120)]}), ["source", "date"])
+    store.upsert("indices", pd.DataFrame({"date": d, "symbol": "^GSPC", "close": [100.0 + (i % 17) for i in range(120)]}), ["symbol", "date"])
+    c = TestClient(main.app)
+    j = c.get("/api/research/leadlag?source=yahoo&metric=t2108&days=0").json()
+    assert j["lags"][0] == -20 and len(j["corr"]) == 41 and len(j["roll"]["r0"]) == len(j["dates"])
+    assert c.get("/api/research/leadlag?source=yahoo&metric=nope").status_code == 400

@@ -51,7 +51,9 @@ def events(items: list[dict], today: dt.date | None = None) -> list[dict]:
     since, until = today - dt.timedelta(days=LOOKBACK), today + dt.timedelta(days=AHEAD)
     sm = store.read("sector_map")
     rep, ch, fl = store.read("analyst_reports"), store.read("etf_changes"), store.read("etf_funds")
-    flow, dart_, earn, ir = store.read("kr_flow"), store.read("dart_prelim"), store.read("earnings"), store.read("kr_ir")
+    dart_, earn, ir = store.read("dart_prelim"), store.read("earnings"), store.read("kr_ir")
+    # per-stock flows from the DB on the deployed API: the whole table is ~300k rows
+    flow = None if remote.ON else store.read("kr_flow")
     dev = store.read("dart_events")
     fund = dict(zip(fl["etf"], fl["name"])) if len(fl) else {}
     out = []
@@ -73,8 +75,9 @@ def events(items: list[dict], today: dt.date | None = None) -> list[dict]:
         if len(ch):
             for r in _recent(ch[ch["name" if kr else "ticker"] == (name if kr else t)], since).itertuples():
                 add(it, r.date, "ETF", f"{fund.get(r.etf, r.etf)} {r.kind}", f"{r.etf}:{r.date}")
-        if kr and len(flow) and len(me):
-            for d, who, v, x in big_flows(flow[flow["ticker"] == t], float(me["size"].iloc[0]), since):
+        f = (remote.select("kr_flow", "ticker", t) if flow is None else flow[flow["ticker"] == t] if len(flow) else flow) if kr else None
+        if kr and f is not None and len(f) and len(me):
+            for d, who, v, x in big_flows(f, float(me["size"].iloc[0]), since):
                 label = "외국인" if who == "foreign" else "기관"
                 add(it, d, "수급", f"{label} {'순매수' if v > 0 else '순매도'} {v / 1e8:+,.0f}억 (평소의 {x:.1f}배, 시총의 {v / me['size'].iloc[0] * 100:+.2f}%)", f"{who}:{d}")
         if kr and len(dart_):

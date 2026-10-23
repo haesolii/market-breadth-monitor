@@ -3,40 +3,57 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { send, useApi, type Status } from "@/lib/api";
+import { StockSearch } from "@/components/StockSearch";
 import { Button } from "@/components/ui/button";
 
-const MENU = [
-  ["/", "1. 종합 시장 현황", "Market Overview"],
-  ["/bullbear", "2. 20% 급등락 분석", "20% Bull/Bear Study"],
-  ["/monitor", "3. 시장 모니터", "Market Monitor"],
-  ["/research", "4. 지표 흐름·과거 통계", "Indicator Flow & Research"],
-  ["/scanner", "5. 조건 충족 종목 검색", "Scanner Results"],
-  ["/world", "6. 세계 지수", "World Indices"],
-  ["/macro", "7. 매크로", "Macro"],
-  ["/board", "8. 차트 보드", "Chart Board"],
-  ["/sectors", "9. 섹터 히트맵", "Sector Heatmap"],
-  ["/etf", "10. 액티브 ETF", "Active ETF Holdings"],
-  ["/reports", "11. 리포트·실적", "Reports & Earnings"],
-  ["/flows", "12. 한국 수급", "Korea Investor Flows"],
-  ["/stock", "13. 종목 상세", "Stock Detail"],
-  ["/leaders", "14. 주도주·추세", "Leaders & Trend (Qullamaggie)"],
-  ["/watch", "15. 관심종목", "Watchlist & Alerts"],
-  ["/calendar", "16. 일정 캘린더", "Earnings & Macro Calendar"],
-  ["/term", "17. 변동성·선물 구조", "Volatility & Futures Curve"],
-  ["/news", "18. 뉴스", "News"],
-  ["/community", "19. 게시판", "Community Board"],
+/** Menu by purpose (was one numbered list of 19). */
+const GROUPS: [string, [string, string][]][] = [
+  ["오늘의 시장", [["/", "종합 시장 현황"], ["/monitor", "시장 모니터"], ["/leaders", "주도주·추세"], ["/bullbear", "20% 급등락"], ["/research", "지표 흐름·과거 통계"], ["/scanner", "조건 충족 종목"]]],
+  ["섹터·종목", [["/sectors", "섹터 히트맵"], ["/stock", "종목 상세"], ["/watch", "관심종목"], ["/etf", "액티브 ETF"]]],
+  ["한국 시장", [["/flows", "수급·증시 자금"], ["/reports", "리포트·실적·공시"]]],
+  ["글로벌·매크로", [["/world", "세계 지수"], ["/macro", "매크로"], ["/term", "변동성·선물 구조"], ["/board", "차트 보드"]]],
+  ["정보", [["/news", "뉴스"], ["/calendar", "일정 캘린더"]]],
+  ["커뮤니티", [["/community", "게시판"]]],
 ];
+const MENU = GROUPS.flatMap(([, items]) => items);
+const active = (href: string, path: string) => path === href || (href !== "/" && path.startsWith(href + "/"));
+
+/** Phones have no hover: a tap on anything with a description (title=) shows it in a sheet for a few seconds. */
+function TapTitles() {
+  const [text, setText] = useState<string | null>(null);
+  useEffect(() => {
+    if (!window.matchMedia("(hover: none)").matches) return;
+    let timer: ReturnType<typeof setTimeout>;
+    const onTap = (e: Event) => {
+      const el = (e.target as HTMLElement).closest?.("[title]") as HTMLElement | null;
+      const t = el?.getAttribute("title");
+      if (!t) return;
+      setText(t);
+      clearTimeout(timer);
+      timer = setTimeout(() => setText(null), 5000);
+    };
+    document.addEventListener("click", onTap, true);
+    return () => { document.removeEventListener("click", onTap, true); clearTimeout(timer); };
+  }, []);
+  if (!text) return null;
+  return (
+    <div onClick={() => setText(null)} className="fixed inset-x-3 bottom-3 z-50 whitespace-pre-line rounded-lg border border-zinc-700 bg-zinc-900/95 p-3 text-xs leading-relaxed text-zinc-200 shadow-xl">
+      {text}<div className="pt-1 text-[10px] text-zinc-500">눌러서 닫기</div>
+    </div>
+  );
+}
 
 export const localTime = (iso?: string | null) => (iso ? new Date(iso).toLocaleString("ko-KR", { hour12: false }) : "—");
 
 export function StatusBar() {
   const { data: st, error, reload } = useApi<Status>("/api/status", 60000);
-  useEffect(() => {  // visitor count for the daily report (the cached status call can't count)
-    const ping = () => fetch("/api/visit", { cache: "no-store" }).catch(() => {});
+  const path = usePathname();
+  useEffect(() => {  // visitors and page views for the daily report (the cached status call can't count)
+    const ping = () => fetch(`/api/visit?page=${encodeURIComponent(path)}`, { cache: "no-store" }).catch(() => {});
     ping();
-    const t = setInterval(ping, 10 * 60 * 1000);
+    const t = setInterval(() => fetch("/api/visit", { cache: "no-store" }).catch(() => {}), 10 * 60 * 1000);
     return () => clearInterval(t);
-  }, []);
+  }, [path]);
   const [msg, setMsg] = useState<string | null>(null);
   const refresh = async () => {
     try {
@@ -83,10 +100,11 @@ export function StatusBar() {
         </Link>
       )}
       {msg && <span className="text-sky-400">{msg}</span>}
+      <div className="order-first w-full sm:order-none sm:ml-auto sm:w-64"><StockSearch placeholder="종목 검색 (이름·티커)" /></div>
       {process.env.NEXT_PUBLIC_AUTH === "1" ? (
-        <span className="ml-auto text-[11px] text-zinc-500">자동 갱신</span>
+        <span className="text-[11px] text-zinc-500">자동 갱신</span>
       ) : (
-        <Button size="sm" variant="outline" className="ml-auto h-7" onClick={refresh} disabled={st.busy}>
+        <Button size="sm" variant="outline" className="h-7" onClick={refresh} disabled={st.busy}>
           {st.busy ? "갱신 중…" : "수동 갱신 (Refresh)"}
         </Button>
       )}
@@ -103,29 +121,31 @@ export function Shell({ children }: { children: React.ReactNode }) {
       <nav className="shrink-0 border-zinc-800 bg-zinc-950 md:w-56 md:border-r">
         <div className="px-4 py-3">
           <div className="font-mono text-sm font-bold text-emerald-400">MARKET BREADTH</div>
-          <div className="text-[10px] text-zinc-500">시장 폭 (Market Breadth) 연구용 · 투자 권유 아님</div>
+          <div className="text-[10px] text-zinc-500">시장 폭 연구용 · 투자 권유 아님</div>
         </div>
-        {/* phones: one native menu instead of a 17-item scroll strip */}
+        {/* phones: one native menu (grouped) instead of a long scroll strip */}
         <div className="px-3 pb-2 md:hidden">
-          <select value={MENU.some(([h]) => h === path) ? path : ""} onChange={(e) => router.push(e.target.value)} aria-label="메뉴"
+          <select value={MENU.find(([h]) => active(h, path))?.[0] ?? ""} onChange={(e) => router.push(e.target.value)} aria-label="메뉴"
             className="w-full rounded border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-100">
-            {!MENU.some(([h]) => h === path) && <option value="">메뉴 선택</option>}
-            {MENU.map(([href, ko]) => <option key={href} value={href}>{ko}</option>)}
+            {!MENU.some(([h]) => active(h, path)) && <option value="">메뉴 선택</option>}
+            {GROUPS.map(([g, items]) => <optgroup key={g} label={g}>{items.map(([href, ko]) => <option key={href} value={href}>{ko}</option>)}</optgroup>)}
           </select>
         </div>
-        <ul className="hidden gap-1 px-2 pb-2 md:flex md:flex-col">
-          {MENU.map(([href, ko, en]) => (
-            <li key={href}>
-              <Link
-                href={href}
-                className={`block whitespace-nowrap rounded px-3 py-2 text-sm ${path === href || (href === "/community" && path.startsWith("/community")) ? "bg-zinc-800 text-white" : "text-zinc-400 hover:bg-zinc-900"}`}
-              >
-                {ko}
-                <div className="text-[10px] text-zinc-500">{en}</div>
-              </Link>
-            </li>
+        <div className="hidden px-2 pb-2 md:block">
+          {GROUPS.map(([g, items]) => (
+            <div key={g} className="pb-2">
+              <div className="px-3 pb-1 pt-2 text-[10px] font-semibold tracking-wide text-zinc-500">{g}</div>
+              <ul className="space-y-0.5">
+                {items.map(([href, ko]) => (
+                  <li key={href}>
+                    <Link href={href} className={`block whitespace-nowrap rounded px-3 py-1.5 text-sm ${active(href, path) ? "bg-zinc-800 text-white" : "text-zinc-400 hover:bg-zinc-900 hover:text-zinc-200"}`}>{ko}</Link>
+                  </li>
+                ))}
+              </ul>
+            </div>
           ))}
-        </ul>
+        </div>
+        <Link href="/privacy" className="block px-5 pb-1 text-[11px] text-zinc-600 hover:text-zinc-300">개인정보처리방침</Link>
         {process.env.NEXT_PUBLIC_AUTH === "1" && (
           <a href="/auth/logout" className="block px-5 pb-3 text-[11px] text-zinc-500 hover:text-zinc-300">로그아웃</a>
         )}
@@ -134,6 +154,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
         <StatusBar />
         <main className="p-3 md:p-4">{children}</main>
       </div>
+      <TapTitles />
     </div>
   );
 }

@@ -4,6 +4,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Fragment, Suspense, useState } from "react";
 import { Err, Panel } from "@/components/bits";
 import { useApi } from "@/lib/api";
+import { BanForm } from "@/components/BanForm";
 import { author, call, useMe, when, type Comment, type Post } from "@/lib/board";
 
 type Res = { post: Post; comments: Comment[]; liked: boolean; admin: boolean };
@@ -121,6 +122,7 @@ function View() {
           <span>조회 {p.views}</span><span>추천 {likes ?? p.likes}</span><span>댓글 {p.comments}</span>
           {data.admin && p.ip && <span className="font-mono text-zinc-600">{p.ip}</span>}
         </div>
+        {data.admin && <div className="pt-2"><BanForm target={p.member ? `user:${p.user_id}` : `ip:${p.ip}`} /></div>}
         <div className="min-h-32 py-4"><Body text={p.body} /></div>
         <div className="flex flex-col items-center gap-1 py-3">
           <button onClick={like} disabled={data.liked || likes !== null} className="rounded-full border border-amber-700 px-5 py-2 text-sm text-amber-300 hover:bg-amber-950 disabled:opacity-50">

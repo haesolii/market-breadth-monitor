@@ -17,7 +17,7 @@ export default function News() {
         <TabBar value={tab} onChange={setTab} tabs={[["kr", "한국 시장", market.data?.kr.length], ["us", "미국 시장", market.data?.us.length], ["watch", "관심종목", watch.data?.length]]} />
         <div className="pt-3">
           {!items ? <div className="py-8 text-center text-xs text-zinc-500">불러오는 중…</div>
-            : tab === "watch" && !items.length ? <div className="py-8 text-center text-xs text-zinc-500">관심종목이 없거나 뉴스가 없습니다. 15번 메뉴에서 종목을 추가하세요.</div>
+            : tab === "watch" && !items.length ? <div className="py-8 text-center text-xs text-zinc-500">관심종목이 없거나 뉴스가 없습니다. &lsquo;관심종목&rsquo; 메뉴에서 종목을 추가하세요.</div>
               : <NewsList items={items} />}
         </div>
       </Panel>

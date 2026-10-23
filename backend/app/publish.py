@@ -56,6 +56,23 @@ def pull_config() -> None:
                 print(f"{local}: restored {len(df):,} rows from {published}")
 
 
+RETAIN_DAYS = 365  # the privacy page promises at most a year for post IPs and visit statistics
+
+
+def retention(cur) -> None:
+    """Drop what the privacy policy says is kept at most RETAIN_DAYS (tables that exist only)."""
+    cut = (pd.Timestamp.now(tz="UTC") - pd.Timedelta(days=RETAIN_DAYS)).isoformat(timespec="seconds")
+    steps = {"board_posts": "UPDATE board_posts SET ip = '' WHERE ip <> '' AND created_at < %s",
+             "board_comments": "UPDATE board_comments SET ip = '' WHERE ip <> '' AND created_at < %s",
+             "board_reports": "UPDATE board_reports SET ip = '' WHERE ip <> '' AND created_at < %s",
+             "usage_visits": "DELETE FROM usage_visits WHERE day < %s::date",
+             "usage_pages": "DELETE FROM usage_pages WHERE day < %s::date"}
+    for table, sql in steps.items():
+        cur.execute("SELECT to_regclass(%s)", (table,))
+        if cur.fetchone()[0]:
+            cur.execute(sql, (cut if "board" in table else cut[:10],))
+
+
 def publish() -> None:
     frames = {name: store.read(name) for name in TABLES}
     frames["scan_hits"] = _scan_table()
@@ -81,6 +98,7 @@ def publish() -> None:
             remote.kv_set("status", st, cur)
             remote.kv_set("validation", report, cur)
             remote.kv_set("kr_flow_overview", flows.clean(flows.overview()), cur)  # kr_flow is too big for the API to load
+            retention(cur)
             if remote.kv_get("indices_config") is None:  # seed once; afterwards the dashboard owns it
                 remote.kv_set("indices_config", world.config(), cur)
         con.commit()

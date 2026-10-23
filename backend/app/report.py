@@ -77,7 +77,19 @@ def usage_lines() -> list[str]:
         f"🕒 마지막 접속: {last.astimezone(KST).strftime('%m-%d %H:%M') if last else '없음'}",
         f"🔐 로그인(24시간): 성공 {ok} · 실패 {bad}" + (" ⚠️ 모르는 시도일 수 있음" if bad else ""),
     ]
+    try:  # usage_pages exists once the dashboard has recorded a page view
+        pages = _query('SELECT path, sum(views) FROM "usage_pages" WHERE day >= current_date - 7 GROUP BY path ORDER BY 2 DESC LIMIT 6')
+        if pages:
+            lines.append("📈 많이 본 화면(7일): " + " · ".join(f"{PAGE_NAMES.get(p, p)} {int(v)}" for p, v in pages))
+    except Exception:  # noqa: BLE001
+        pass
     return lines
+
+
+PAGE_NAMES = {"/": "종합", "/monitor": "시장 모니터", "/leaders": "주도주", "/bullbear": "20% 급등락", "/research": "지표 흐름",
+              "/scanner": "조건 검색", "/sectors": "섹터", "/stock": "종목 상세", "/watch": "관심종목", "/etf": "ETF", "/flows": "수급",
+              "/reports": "리포트", "/world": "세계 지수", "/macro": "매크로", "/term": "변동성", "/board": "차트 보드", "/news": "뉴스",
+              "/calendar": "일정", "/community": "게시판"}
 
 
 def data_lines() -> list[str]:

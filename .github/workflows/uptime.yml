@@ -1,0 +1,47 @@
+name: Uptime
+
+# Every 15 minutes: the deployed site must answer (login page 200, API 401 without a cookie = alive).
+# On failure, a Telegram alert. GitHub may delay scheduled runs, so this catches outages that last.
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch: {}
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      SITE: https://market-breadth-monitor.vercel.app
+    steps:
+      - name: Probe
+        id: probe
+        run: |
+          page=$(curl -s -o /dev/null -w "%{http_code}" --max-time 30 "$SITE/login" || echo 000)
+          api=$(curl -s -o /dev/null -w "%{http_code}" --max-time 30 "$SITE/api/status" || echo 000)
+          echo "login=$page api=$api"
+          if [ "$page" != 200 ] || { [ "$api" != 401 ] && [ "$api" != 200 ]; }; then
+            sleep 60  # one retry: a cold start or a deploy switch is not an outage
+            page=$(curl -s -o /dev/null -w "%{http_code}" --max-time 30 "$SITE/login" || echo 000)
+            api=$(curl -s -o /dev/null -w "%{http_code}" --max-time 30 "$SITE/api/status" || echo 000)
+            echo "retry login=$page api=$api"
+            if [ "$page" != 200 ] || { [ "$api" != 401 ] && [ "$api" != 200 ]; }; then
+              echo "down=login $page / api $api" >> "$GITHUB_OUTPUT"
+            fi
+          fi
+      - uses: actions/checkout@v4
+        if: steps.probe.outputs.down != ''
+      - uses: actions/setup-python@v5
+        if: steps.probe.outputs.down != ''
+        with:
+          python-version: "3.12"
+      - name: Alert
+        if: steps.probe.outputs.down != ''
+        working-directory: backend
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          pip install -q -r requirements.txt
+          python -m app.report --alert "사이트 응답 없음 (${{ steps.probe.outputs.down }}) — Vercel 대시보드를 확인하세요"
+          exit 1

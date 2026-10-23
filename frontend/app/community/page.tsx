@@ -45,6 +45,7 @@ function BoardList() {
     <div className="mx-auto max-w-5xl space-y-3">
       <Panel title="게시판" right={<>
         <span className="text-xs text-zinc-400">{me.data?.user ? <>{me.data.user.nickname} ✔{me.data.admin && " (관리자)"}</> : "비회원 (유동)"}</span>
+        {me.data?.admin && <Link href="/community/admin" className="text-xs text-amber-300 hover:underline">관리</Link>}
         <Link href="/community/account" className="text-xs text-sky-400 hover:underline">{me.data?.user ? "내 계정" : "로그인 · 가입"}</Link>
         <Link href={`/community/write${board && board !== "notice" ? `?b=${board}` : ""}`} className="rounded bg-sky-700 px-3 py-1 text-xs text-white hover:bg-sky-600">글쓰기</Link>
       </>}>

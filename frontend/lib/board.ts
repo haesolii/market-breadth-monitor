@@ -1,7 +1,7 @@
 "use client";
 import { useApi } from "@/lib/api";
 
-export type Row = { id: number; board: string; title: string; nick: string; ip_prefix: string; member: boolean; created_at: string;
+export type Row = { id: number; board: string; title: string; nick: string; ip_prefix: string; member: boolean; created_at: string; user_id?: number | null;
   views: number; likes: number; comments: number; mine?: boolean; ip?: string };
 export type Post = Row & { body: string; updated_at: string | null; tickers: string };
 export type Comment = { id: number; parent_id: number | null; body?: string; nick?: string; ip_prefix?: string; member?: boolean;

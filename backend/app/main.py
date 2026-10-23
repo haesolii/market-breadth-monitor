@@ -11,6 +11,7 @@ import pandas as pd
 from fastapi import BackgroundTasks, FastAPI, HTTPException, Query, Request
 from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from pydantic import BaseModel
 
 from . import analyst, board, brief, calendar_, dart, earnings, etf, flows, kr_funds, leaders, news, term, watch, indicators, macro, refresh, remote, research, sectors, stock, store, universes, usage, validation, world
@@ -40,6 +41,7 @@ async def lifespan(_app):
 app = FastAPI(title="Market Breadth Monitor", lifespan=lifespan)
 app.add_middleware(CORSMiddleware, allow_origins=["http://localhost:3000"], allow_methods=["*"], allow_headers=["*"])
 app.include_router(board.router)
+app.add_middleware(GZipMiddleware, minimum_size=2048)  # big JSON (scan rows, monitor history) compresses ~5-10x
 
 # Same single-user password gate as the frontend (cookie set by /auth/login); off when unset (local use).
 _PW = os.getenv("DASHBOARD_PASSWORD", "")
@@ -52,7 +54,7 @@ async def require_login(request: Request, call_next):
         return await call_next(request)
     if _TOKEN and not hmac.compare_digest(request.cookies.get("mb_auth", ""), _TOKEN):
         return JSONResponse({"detail": "로그인이 필요합니다"}, status_code=401)
-    if request.url.path == "/api/visit":  # page load + every 10 min from the status bar (never cached)
+    if request.url.path == "/api/visit":  # page load / route change + every 10 min from the status bar (never cached)
         usage.record_visit(request)
     res = await call_next(request)
     # Deployed site: the CDN answers repeat GETs, so API work does not grow with viewers.
@@ -76,8 +78,33 @@ CDN_TTL = {"/api/status": (30, 30), "/api/news/market": (300, 300), "/api/news/s
 
 
 @app.get("/api/visit")
-def visit():
+def visit(page: str = ""):
+    usage.record_page(page)
     return {"ok": True}
+
+
+@app.get("/api/summary")
+def summary():
+    """Home-page headline: market health, index trend, 52-week highs / lows, volatility curve,
+    today's Korean flows and the next scheduled events."""
+    lb = store.read("leaders_breadth")
+    out = {"markets": []}
+    for src, idx_market, label in (("yahoo", "nasdaq", "미국"), ("kospi", "kospi", "코스피"), ("kosdaq", "kosdaq", "코스닥"), ("crypto", "crypto", "크립토")):
+        sc = research.score_now(src)
+        v = leaders.view(idx_market) if len(lb) else {}
+        b = v.get("breadth") or []
+        last = b[-1] if b else {}
+        out["markets"].append({"key": src, "label": label, "score": sc, "trend": v.get("trend"), "index": v.get("index"),
+                               "new_high": last.get("new_high"), "new_low": last.get("new_low"), "above20": last.get("above20"),
+                               "leaders_above20": last.get("leaders_above20")})
+    t = term.view(30)
+    out["vix"] = {"ratio": (t.get("vix_ratio") or {}).get("now"), "vix": (t.get("vol_curve") or {}).get("now", [None, None])[1]}
+    mk = store.read("kr_flow_market")
+    out["kr_flow"] = [] if mk.empty else [{k: (str(r[k]) if k == "date" else r[k]) for k in ("date", "market", "foreign", "inst", "indiv")}
+                                          for r in mk[mk["date"] == mk["date"].max()].to_dict("records")]
+    cal = calendar_.view(back=0, ahead=7, min_cap=2e11)["rows"]
+    out["events"] = [r for r in cal if r["kind"] in ("FOMC", "매크로") or r.get("watch")][:6] + [r for r in cal if r["kind"] == "미국 실적"][:4]
+    return out
 
 
 @app.post("/api/login")

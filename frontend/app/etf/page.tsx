@@ -76,7 +76,8 @@ export default function EtfPage() {
                 ))}
               </tbody>
             </table>
-            {!changes.length && <div className="py-6 text-center text-xs text-zinc-500">해당 기간 변화 없음</div>}
+            {!changes.length && <div className="py-6 text-center text-xs leading-relaxed text-zinc-500">해당 기간 변화가 없습니다.<br />
+              편입·편출은 같은 펀드의 구성 종목을 이틀 이상 저장해야 계산됩니다 (2026-10-23 수집 시작, 매일 장 마감 후 갱신).</div>}
           </div>
         </Panel>
 

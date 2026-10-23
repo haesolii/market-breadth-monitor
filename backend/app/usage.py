@@ -20,7 +20,9 @@ DDL = [
     'CREATE TABLE IF NOT EXISTS "usage_visits" (day date, visitor text, first_seen timestamptz DEFAULT now(), '
     "last_seen timestamptz DEFAULT now(), ua text, PRIMARY KEY (day, visitor))",
     'CREATE TABLE IF NOT EXISTS "usage_logins" (ts timestamptz DEFAULT now(), ok boolean, visitor text, ua text)',
+    'CREATE TABLE IF NOT EXISTS "usage_pages" (day date, path text, views bigint NOT NULL DEFAULT 0, PRIMARY KEY (day, path))',
 ]
+PAGE = __import__("re").compile(r"^/[a-z0-9/_-]{0,40}$")  # app routes only (no query strings, no free text)
 
 
 def visitor_id(ip: str, ua: str) -> str:
@@ -106,6 +108,24 @@ def record_visit(request) -> None:
             _check_surge(day)
     except Exception as e:  # noqa: BLE001 - analytics must never break the dashboard
         print(f"[warn] usage: {e}")
+
+
+def record_page(path: str) -> None:
+    """One page view of an app route (per KST day), for 'which menus are used'. Best-effort."""
+    if not remote.ON or not PAGE.match(path or ""):
+        return
+    day = dt.datetime.now(dt.timezone(dt.timedelta(hours=9))).date().isoformat()
+    try:
+        _exec('INSERT INTO "usage_pages"(day, path, views) VALUES (%s, %s, 1) '
+              'ON CONFLICT (day, path) DO UPDATE SET views = "usage_pages".views + 1', (day, path))
+    except Exception as e:  # noqa: BLE001
+        print(f"[warn] usage: {e}")
+
+
+def top_pages(days: int = 7, n: int = 8) -> list[tuple[str, int]]:
+    rows = _exec('SELECT path, sum(views) FROM "usage_pages" WHERE day >= current_date - %s GROUP BY path ORDER BY 2 DESC LIMIT %s',
+                 (days, n), fetch=True)
+    return [(p, int(v)) for p, v in rows or []]
 
 
 def record_login(request, ok: bool) -> None:

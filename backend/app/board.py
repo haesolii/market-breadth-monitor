@@ -511,7 +511,15 @@ def _admin(t: _Tx, request: Request) -> Who:
 def admin_reports(request: Request):
     with tx() as t:
         _admin(t, request)
-        return t.q("SELECT * FROM board_reports WHERE handled = 0 ORDER BY id DESC LIMIT 200")
+        rows = t.q("SELECT * FROM board_reports WHERE handled = 0 ORDER BY id DESC LIMIT 200")
+        for r in rows:  # what was reported, where it is, who wrote it
+            if r["kind"] == "post":
+                x = t.one("SELECT id AS post_id, title AS text, nick, ip, user_id, deleted FROM board_posts WHERE id = %s", (r["target_id"],))
+            else:
+                x = t.one("SELECT post_id, body AS text, nick, ip, user_id, deleted FROM board_comments WHERE id = %s", (r["target_id"],))
+            r.update(x or {"post_id": None, "text": "(없음)", "nick": "", "ip": "", "user_id": None, "deleted": 1})
+            r["text"] = (r["text"] or "")[:200]
+        return rows
 
 
 @router.post("/admin/reports/{rid}/done")

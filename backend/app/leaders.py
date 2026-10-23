@@ -151,6 +151,10 @@ def _kind(lst: pd.DataFrame, kind: str) -> pd.DataFrame:
     return d.drop(columns=[c for c in ("market", "kind") if c in d]).assign(date=d["date"].astype(str))
 
 
+def _sort(d: pd.DataFrame, col: str) -> pd.DataFrame:
+    return d.sort_values(col, ascending=False) if col in d else d  # a list published by an older version lacks newer columns
+
+
 def view(market: str) -> dict:
     b, lst, idx = store.read("leaders_breadth"), store.read("leaders_list"), store.read("indices")
     b = b[b["market"] == market].sort_values("date") if len(b) else b
@@ -165,6 +169,6 @@ def view(market: str) -> dict:
     return {"market": market, "index": sym, "trend": trend(px.set_index("date")["close"]) if len(px) else None,
             "index_closes": [[str(d), float(c)] for d, c in zip(px["date"].tail(HISTORY), px["close"].tail(HISTORY))],
             "breadth": rows(b.drop(columns="market").assign(date=b["date"].astype(str))) if len(b) else [],
-            "leaders": rows(_kind(lst, "leader").sort_values("r63", ascending=False)) if len(lst) else [],
-            "ep": rows(_kind(lst, "ep").sort_values("vratio", ascending=False)) if len(lst) else [],
+            "leaders": rows(_sort(_kind(lst, "leader"), "r63")) if len(lst) else [],
+            "ep": rows(_sort(_kind(lst, "ep"), "vratio")) if len(lst) else [],
             "leader_pct": LEADER_PCT}

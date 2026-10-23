@@ -67,3 +67,18 @@ def test_list_cache_cleared_by_writes(monkeypatch):
     before = c.get("/api/board/posts?board=journal").json()["total"]
     c.post("/api/board/posts", json={"board": "journal", "title": "일지", "body": "b", "nick": "기록", "password": "1234"})
     assert c.get("/api/board/posts?board=journal").json()["total"] == before + 1     # not the cached page
+
+
+def test_admin_tools_only_for_admins(monkeypatch):
+    monkeypatch.setattr(board, "LIMITS", {k: (0, 1000) for k in board.LIMITS})
+    monkeypatch.setattr(board, "ADMINS", {"boss2"})
+    guest, member, admin = _c("3.3.3.1"), _c("3.3.3.2"), _c("3.3.3.3")
+    member.post("/api/board/signup", json={"username": "plain1", "nickname": "일반", "password": "password1"})
+    admin.post("/api/board/signup", json={"username": "boss2", "nickname": "운영자", "password": "password1"})
+    pid = member.post("/api/board/posts", json={"board": "free", "title": "t", "body": "b"}).json()["id"]
+    for c in (guest, member):
+        assert c.get("/api/board/admin/reports").status_code == 403
+        assert c.post("/api/board/admin/ban", json={"target": "ip:1.2.3.4"}).status_code == 403
+        assert "ip" not in c.get(f"/api/board/posts/{pid}").json()["post"]                 # full IPs never shown
+    assert admin.get("/api/board/admin/reports").status_code == 200 and admin.get("/api/board/me").json()["admin"]
+    assert admin.get(f"/api/board/posts/{pid}").json()["post"]["ip"] == "3.3.3.2"

@@ -17,7 +17,7 @@ from .config import DATA
 
 TABLES = ["breadth20", "market_monitor_daily", "indices", "macro", "sector_map", "sector_daily", "etf_latest", "etf_changes", "etf_funds",
           "analyst_reports", "earnings", "macro_releases", "ai_brief", "kr_flow", "kr_flow_market", "dart_prelim",
-          "leaders_breadth", "leaders_list", "econ_calendar", "kr_ir", "vol_index", "vix_futures", "futures_basis", "crude_curve", "kr_funds", "dart_events"]
+          "leaders_breadth", "leaders_list", "econ_calendar", "kr_ir", "vol_index", "vix_futures", "futures_basis", "crude_curve", "kr_funds", "dart_events", "kr_investors"]
 RESTORE = {"etf_changes": "etf_changes", "etf_snapshots": "etf_latest", "earnings": "earnings",
            "macro_releases": "macro_releases", "ai_brief": "ai_brief", "kr_flow_market": "kr_flow_market",
            "vix_futures": "vix_futures", "futures_basis": "futures_basis", "kr_ir": "kr_ir"}  # local table <- published table

@@ -75,6 +75,67 @@ function MarketFunds() {
   );
 }
 
+type Inv = { market: string; latest?: string; dates: string[]; series: Record<string, number[]>; labels: Record<string, string>;
+  sums: { key: string; label: string; d1: number; d5: number; d20: number; d60: number }[] };
+// Fixed colors per investor type (identity, never by rank)
+const INV_COLOR: Record<string, string> = { individual: "#a78bfa", foreign: "#38bdf8", institution: "#f59e0b", pension: "#10b981",
+  trust: "#f472b6", fin_invest: "#fb923c", insurance: "#2dd4bf", private_fund: "#facc15", etc_corp: "#94a3b8" };
+const INV_DEFAULT = ["foreign", "individual", "pension", "trust", "fin_invest"];
+
+/** Whole-market net buying by investor type incl. the institution breakdown (연기금, 투신 ...), from Daum. */
+function InvestorBreakdown() {
+  const [market, setMarket] = useState("kospi");
+  const [win, setWin] = useState(60);
+  const [picked, setPicked] = useState<string[]>(INV_DEFAULT);
+  const { data, error } = useApi<Inv>(`/api/kr/investors?market=${market}&days=250`);
+  const bench = useBench(market === "kospi" ? "^KS11" : "^KQ11");
+  const view = useMemo(() => {
+    if (!data?.dates.length) return null;
+    const n = Math.min(win, data.dates.length), dates = data.dates.slice(-n);
+    return { dates, series: picked.filter((k) => data.series[k]).map((k) => ({ name: `${data.labels[k]} 누적`, color: INV_COLOR[k] ?? "#a1a1aa", type: "line" as const, data: cum(data.series[k].slice(-n)) })),
+      spy: bench.map ? dates.map((d) => bench.map!.get(d) ?? null) : undefined };
+  }, [data, win, picked, bench.map]);
+  const toggle = (k: string) => setPicked(picked.includes(k) ? picked.filter((x) => x !== k) : [...picked, k].slice(-6));
+  return (
+    <Panel title={`투자자별 세부 순매수 (시장 전체${data?.latest ? `, ${data.latest}` : ""})`} right={<>
+      <div className="flex overflow-hidden rounded border border-zinc-700 text-xs">
+        {[["kospi", "코스피"], ["kosdaq", "코스닥"]].map(([k, l]) => <button key={k} onClick={() => setMarket(k)} className={`px-3 py-1 ${market === k ? "bg-sky-700 text-white" : "text-zinc-300 hover:bg-zinc-800"}`}>{l}</button>)}
+      </div>
+      <div className="flex overflow-hidden rounded border border-zinc-700 text-xs">
+        {WINDOWS.map(([n, l]) => <button key={n} onClick={() => setWin(n)} className={`px-3 py-1 ${win === n ? "bg-sky-700 text-white" : "text-zinc-300 hover:bg-zinc-800"}`}>{l}</button>)}
+      </div>
+    </>}>
+      <Err error={error} />
+      {data && data.sums.length > 0 && (
+        <div className="overflow-x-auto">
+          <table className="w-full font-mono text-xs">
+            <thead className="text-zinc-400"><tr><th className="text-left">투자자 (눌러서 차트에 추가·제거)</th><th>오늘</th><th>5일</th><th>20일</th><th>60일</th></tr></thead>
+            <tbody>
+              {data.sums.map((r) => {
+                const on = picked.includes(r.key), sub = !["individual", "foreign", "institution", "etc_corp", "etc_foreign"].includes(r.key);
+                return (
+                  <tr key={r.key} onClick={() => toggle(r.key)} className={`cursor-pointer border-t border-zinc-900 text-center hover:bg-zinc-900 ${on ? "bg-zinc-900/70" : ""}`}>
+                    <td className={`text-left font-sans ${sub ? "pl-5 text-zinc-400" : "text-zinc-200"}`}>
+                      <span className="mr-1.5 inline-block h-2 w-2 rounded-full align-middle" style={{ background: on ? INV_COLOR[r.key] ?? "#a1a1aa" : "transparent", border: "1px solid #52525b" }} />
+                      {sub ? "└ " : ""}{r.label}
+                    </td>
+                    {(["d1", "d5", "d20", "d60"] as const).map((k) => <td key={k} className={tone(r[k])}>{eok(r[k])}</td>)}
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {view && <div className="mt-3"><TimeChart dates={view.dates} series={view.series} spy={view.spy} lowerName={market === "kospi" ? "코스피" : "코스닥"} height={420} yName="억원" /></div>}
+      <div className="mt-1 text-[11px] text-zinc-500">
+        기관 합계 = 금융투자 + 보험 + 투신 + 사모 + 은행 + 기타금융 + 연기금. 금융투자에는 프로그램·차익거래 물량이 많이 섞입니다. 출처: 다음 금융(한국거래소 자료, 비공식 경로).
+        종목별 세부 구분은 무료로 받을 수 있는 곳이 없어 시장 전체만 제공합니다.
+      </div>
+    </Panel>
+  );
+}
+
 export default function Flows() {
   const [win, setWin] = useState(60);
   const { data, error } = useApi<Res>("/api/flows?days=120");
@@ -127,6 +188,8 @@ export default function Flows() {
           <div className="text-[11px] text-zinc-500">외국인 20일 순매수 순으로 정렬. 외국인과 기관이 같은 방향이면 수급이 강한 업종입니다.</div>
         </Panel>
       )}
+
+      <InvestorBreakdown />
 
       <MarketFunds />
 

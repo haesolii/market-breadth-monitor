@@ -590,6 +590,13 @@ def watchlist_save(items: list[WatchIn], request: Request):
     return {"ok": True, "items": out}
 
 
+@app.get("/api/kr/investors")
+def kr_investors(market: str = "kospi", days: int = Query(120, ge=5, le=1300)):
+    if market not in ("kospi", "kosdaq"):
+        raise HTTPException(400, "market must be kospi or kosdaq")
+    return flows.investors_view(market, days)
+
+
 @app.get("/api/kr/funds")
 def kr_funds_view(days: int = Query(756, ge=20, le=2000)):
     return kr_funds.view(days)

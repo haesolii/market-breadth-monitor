@@ -8,6 +8,10 @@
   kr_flow_market — whole-market net value per day (억원) for KOSPI / KOSDAQ. Naver serves only the
                    current day, so the history starts with the first refresh (restored from Supabase
                    when the runner's data cache is gone).
+  kr_investors   — whole-market net value per day (억원) by investor type incl. the institution breakdown
+                   (금융투자, 보험, 투신, 사모, 은행, 기타금융, 연기금) and 기타법인 / 기타외국인, from Daum
+                   finance (unofficial; KRX data). INVESTOR_DAYS of history on the first run. Per-stock data
+                   has no institution breakdown on either site.
 """
 import datetime as dt
 import math
@@ -25,6 +29,15 @@ BACKFILL_PAGES = 2  # x 60 sessions
 FINAL_HOUR = 18  # KST: per-stock investor numbers are final by then
 KST = dt.timezone(dt.timedelta(hours=9))
 THREADS = 8
+DAUM = "https://finance.daum.net/api/investor/{market}/days"
+INVESTOR_DAYS = 1300  # ~5 years (100 per page)
+# Daum detail key -> column, in display order
+INVESTORS = {"INDIVIDUAL": "individual", "FOREIGN": "foreign", "ETC_FOREIGN": "etc_foreign", "FINANCIAL_INVESTOR": "fin_invest",
+             "INSURANCE_COMPANIES": "insurance", "MUTUAL_FUND": "trust", "PRIVATE_EQUITY_FUND": "private_fund", "BANK": "bank",
+             "ETC_FINANCIAL_INSTITUTION": "etc_fin", "PENSION_FUND": "pension", "ETC_CORPORATION": "etc_corp"}
+INVESTOR_KO = {"individual": "개인", "foreign": "외국인", "etc_foreign": "기타외국인", "institution": "기관 합계", "fin_invest": "금융투자",
+               "insurance": "보험", "trust": "투신", "private_fund": "사모", "bank": "은행", "etc_fin": "기타금융", "pension": "연기금",
+               "etc_corp": "기타법인"}
 KEEP_DAYS = 400
 WHO = {"foreign": "foreignerPureBuyQuant", "inst": "organPureBuyQuant", "indiv": "individualPureBuyQuant"}
 
@@ -70,6 +83,56 @@ def _market(s) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+def parse_daum(rows: list[dict], market: str) -> pd.DataFrame:
+    out = []
+    for r in rows:
+        d = r.get("details") or {}
+        if not d:
+            continue
+        row = {"date": dt.date.fromisoformat(r["date"][:10]), "market": market,
+               **{col: (d.get(key) or 0) / 1e8 for key, col in INVESTORS.items()},
+               "institution": (r.get("institutionStraightPurchasePrice") or 0) / 1e8}
+        out.append(row)
+    return pd.DataFrame(out)
+
+
+def fetch_investors(s, market: str, days: int) -> pd.DataFrame:
+    frames = []
+    per = 100 if days > 30 else 30
+    for page in range(1, -(-days // per) + 1):
+        r = s.get(DAUM.format(market=market.upper()), params={"page": page, "perPage": per, "pagination": "true", "details": "true"},
+                  headers={"Referer": "https://finance.daum.net/"}, timeout=20)
+        r.raise_for_status()
+        f = parse_daum(r.json().get("data") or [], market)
+        if f.empty:
+            break
+        frames.append(f)
+    return pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
+
+
+def refresh_investors(s) -> int:
+    old = store.read("kr_investors")
+    have = set(old["market"]) if len(old) else set()
+    new = [fetch_investors(s, m, 30 if m in have else INVESTOR_DAYS) for m in ("kospi", "kosdaq")]
+    out = pd.concat([old, *new], ignore_index=True).drop_duplicates(["date", "market"], keep="last").sort_values(["market", "date"])
+    store.write("kr_investors", out.reset_index(drop=True))
+    return len(out)
+
+
+def investors_view(market: str = "kospi", days: int = 120) -> dict:
+    """Daily net buying (억원) by investor type for one market, plus 1 / 5 / 20-session sums."""
+    df = store.read("kr_investors")
+    df = df[df["market"] == market].sort_values("date") if len(df) else df
+    if df.empty:
+        return {"market": market, "dates": [], "series": {}, "sums": [], "labels": INVESTOR_KO}
+    cols = ["individual", "foreign", "etc_foreign", "institution", "fin_invest", "insurance", "trust", "private_fund", "bank", "etc_fin",
+            "pension", "etc_corp"]
+    tail = df.tail(days)
+    sums = [{"key": c, "label": INVESTOR_KO[c], **{f"d{n}": round(float(df[c].tail(n).sum()), 1) for n in (1, 5, 20, 60)}} for c in cols]
+    return {"market": market, "latest": str(df["date"].iloc[-1]), "dates": [str(d) for d in tail["date"]],
+            "series": {c: [round(float(v), 1) for v in tail[c]] for c in cols}, "sums": sums, "labels": INVESTOR_KO}
+
+
 def all_stocks() -> pd.DataFrame:
     m = store.read("sector_map")
     m = m[m["market"].isin(["kospi", "kosdaq"])] if len(m) else m
@@ -96,6 +159,11 @@ def refresh() -> dict:
     s.headers["User-Agent"] = BROWSER_UA
     mk = pd.concat([store.read("kr_flow_market"), _market(s)], ignore_index=True).drop_duplicates(["date", "market"], keep="last")
     store.write("kr_flow_market", mk.sort_values("date").reset_index(drop=True))
+    try:
+        investors = refresh_investors(s)
+    except Exception as e:  # noqa: BLE001 - the breakdown is extra; stock flows still update
+        investors = 0
+        store.log("warn", "flows", f"investor breakdown (Daum): {e}")
     old = store.read("kr_flow")
     today = dt.datetime.now(KST)
     done = store.status()["sources"].get("flows", {}).get("daily_done")
@@ -116,7 +184,7 @@ def refresh() -> dict:
     if failed:
         store.log("warn", "flows", f"{failed} of {len(todo)} stocks failed; retried next refresh")
     return {"latest_date": str(max(out["date"])) if len(out) else None, "fetched": len(todo) - failed, "failed": failed,
-            "stocks": int(out["ticker"].nunique()) if len(out) else 0, "rows": len(out), "daily": daily_due}
+            "stocks": int(out["ticker"].nunique()) if len(out) else 0, "rows": len(out), "daily": daily_due, "investor_days": investors}
 
 
 # ---- read side ----------------------------------------------------------------------

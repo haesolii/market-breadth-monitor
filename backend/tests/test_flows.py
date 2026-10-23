@@ -41,3 +41,12 @@ def test_dart_event_categories():
     assert dart.category("자기주식 취득 결정") == "자사주 매입" and dart.category("주식소각결정") == "자사주 소각"
     assert dart.category("단일판매ㆍ공급계약체결") == "공급계약·수주"
     assert dart.category("임원ㆍ주요주주특정증권등소유상황보고서") is None
+
+
+def test_daum_investor_breakdown_parse():
+    rows = [{"date": "2026-10-23 00:00:00", "institutionStraightPurchasePrice": 865967553882.0,
+             "details": {"PENSION_FUND": 52895304153.0, "MUTUAL_FUND": 172182270470.0, "FOREIGN": -978947698411.0, "INDIVIDUAL": 42212493108.0}},
+            {"date": "2026-10-22 00:00:00", "details": None}]
+    df = flows.parse_daum(rows, "kospi")
+    assert len(df) == 1 and round(df["pension"].iloc[0], 1) == 529.0 and round(df["institution"].iloc[0], 1) == 8659.7
+    assert df["bank"].iloc[0] == 0 and df["market"].iloc[0] == "kospi"

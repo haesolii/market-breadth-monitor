@@ -1,8 +1,8 @@
 "use client";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Suspense, useEffect, useMemo } from "react";
-import { Err, Kpi, Panel } from "@/components/bits";
+import { Suspense, useEffect, useMemo, useState } from "react";
+import { Err, Kpi, Panel, TabBar } from "@/components/bits";
 import { TimeChart } from "@/components/TimeChart";
 import { StockNews } from "@/components/News";
 import { StockSearch, type Hit } from "@/components/StockSearch";
@@ -43,6 +43,7 @@ function ByName({ q }: { q: string }) {
 
 function Detail({ t, m }: { t: string; m: string }) {
   const { data: d, error } = useApi<D>(`/api/stock?ticker=${encodeURIComponent(t)}${m ? `&market=${m}` : ""}`);
+  const [tab, setTab] = useState("chart");
   const flow = useMemo(() => d?.flow?.dates.length ? {
     series: WHO.map(([k, l, c]) => ({ name: `${l} 누적`, data: cum(d.flow![k]), color: c, type: "line" as const })), spy: d.flow.close,
   } : null, [d]);
@@ -64,10 +65,22 @@ function Detail({ t, m }: { t: string; m: string }) {
           }).slice(0, 6)}
         </div>
         {d.sector_above !== null && <div className="mt-2 text-[11px] text-zinc-500">{d.sector} 업종 종목 중 40일선 위 비율 {d.sector_above.toFixed(0)}% · %ile = 같은 시장 전체 종목 중 위치 (100 = 가장 많이 오름)</div>}
-        {tv && <div className="mt-3"><TVChart symbol={tv} height={460} /></div>}
       </Panel>
 
-      {flow && d.flow && (
+      <TabBar value={tab} onChange={setTab} tabs={[
+        ["chart", "차트"], ...(flow ? [["flow", "투자자 수급"] as [string, string]] : []), ["news", "뉴스"],
+        ...(d.analyst ? [["reports", "증권사 리포트", d.analyst.rows.length] as [string, string, number]] : []),
+        [kr(d.market) ? "dart" : "earnings", kr(d.market) ? "잠정실적 공시" : "실적 발표", kr(d.market) ? d.dart.length : d.earnings.length],
+        ["etf", "액티브 ETF", d.etf.holders.length], ["peers", "같은 업종"],
+      ]} />
+
+      {tab === "chart" && (tv ? <Panel><TVChart symbol={tv} height={520} /></Panel> : flow && d.flow ? (
+        <Panel title="주가 (최근 120거래일 종가)" right={<a className="text-xs text-sky-400 hover:underline" target="_blank" rel="noreferrer" href={tvLink(`KRX:${d.ticker}`)}>TradingView에서 크게 보기 ↗</a>}>
+          <TimeChart dates={d.flow.dates} series={[{ name: "종가", color: "#e4e4e7", type: "line", data: d.flow.close }]} height={420} />
+        </Panel>
+      ) : <Panel><div className="text-xs text-zinc-500">차트 데이터가 없습니다. 오른쪽 위 TradingView 링크를 이용하세요.</div></Panel>)}
+
+      {tab === "flow" && flow && d.flow && (
         <Panel title="투자자별 누적 순매수 (억원)" right={<span className="text-xs text-zinc-400">
           {WHO.map(([k, l]) => <span key={k} className="ml-3">{l} 5일 <b className={tone(d.flow!.sum5[k])}>{eok(d.flow!.sum5[k])}</b> · 20일 <b className={tone(d.flow!.sum20[k])}>{eok(d.flow!.sum20[k])}</b></span>)}
         </span>}>
@@ -76,9 +89,9 @@ function Detail({ t, m }: { t: string; m: string }) {
         </Panel>
       )}
 
-      <Panel title={`${d.name} 뉴스`}><StockNews ticker={d.ticker} market={d.market} /></Panel>
+      {tab === "news" && <Panel title={`${d.name} 뉴스`}><StockNews ticker={d.ticker} market={d.market} /></Panel>}
 
-      <div className="grid gap-3 xl:grid-cols-2">
+      {tab === "peers" && (
         <Panel title={`같은 업종 대형주 (${d.sector})`}>
           <table className="w-full font-mono text-xs">
             <thead className="text-zinc-400"><tr><th className="text-left">종목</th>{P.slice(0, 5).map(([k, l]) => <th key={k}>{l}</th>)}</tr></thead>
@@ -92,7 +105,9 @@ function Detail({ t, m }: { t: string; m: string }) {
             </tbody>
           </table>
         </Panel>
+      )}
 
+      {tab === "etf" && (
         <Panel title="액티브 ETF 보유·매매">
           {!d.etf.holders.length && !d.etf.changes.length ? <div className="text-xs text-zinc-500">추적 중인 액티브 ETF가 보유하지 않습니다.</div> : (
             <div className="space-y-3">
@@ -115,9 +130,9 @@ function Detail({ t, m }: { t: string; m: string }) {
             </div>
           )}
         </Panel>
-      </div>
+      )}
 
-      {d.analyst && (
+      {tab === "reports" && d.analyst && (
         <Panel title="증권사 리포트" right={c && <span className="text-xs text-zinc-400">최근 90일 {c.brokers}곳 평균 목표가 <b className="text-zinc-100">{num(c.mean)}</b> ({num(c.low)} ~ {num(c.high)}) · 괴리율 <b className={tone(c.upside)}>{pct(c.upside)}</b></span>}>
           {!d.analyst.rows.length ? <div className="text-xs text-zinc-500">최근 리포트가 없습니다.</div> : (
             <div className="max-h-[420px] overflow-auto">
@@ -137,7 +152,7 @@ function Detail({ t, m }: { t: string; m: string }) {
         </Panel>
       )}
 
-      {kr(d.market) ? (
+      {tab === "dart" && (
         <Panel title="잠정실적 공시 (DART)">
           {!d.dart.length ? <div className="text-xs text-zinc-500">최근 잠정실적 공시가 없거나 DART 수집이 꺼져 있습니다.</div> : (
             <table className="w-full font-mono text-xs">
@@ -150,7 +165,8 @@ function Detail({ t, m }: { t: string; m: string }) {
             </table>
           )}
         </Panel>
-      ) : d.earnings.length > 0 && (
+      )}
+      {tab === "earnings" && (
         <Panel title="실적 발표">
           <table className="w-full font-mono text-xs">
             <thead className="text-zinc-400"><tr><th className="text-left">발표일</th><th>분기</th><th>EPS</th><th>예상</th><th>서프라이즈</th><th>반응</th><th>이후</th></tr></thead>

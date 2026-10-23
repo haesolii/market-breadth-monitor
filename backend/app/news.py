@@ -56,18 +56,24 @@ def _clean(t: str | None, n: int = 160) -> str:
     return t[:n] + ("…" if len(t) > n else "")
 
 
+def _thumb(u: str | None) -> str:
+    """Naver image URL resized to a small thumbnail (the original can be megabytes)."""
+    return f"{u.split('?')[0]}?type=nf220_150" if u and u.startswith("https://imgnews.pstatic.net/") else ""
+
+
 def parse_naver_stock(groups: list[dict]) -> list[dict]:
     out = []
     for g in groups:
         for x in g.get("items") or []:
             out.append({"time": _kst(x["datetime"]), "source": x.get("officeName", ""), "title": _clean(x.get("titleFull") or x.get("title"), 200),
-                        "summary": _clean(x.get("body")), "url": x.get("mobileNewsUrl") or f"https://n.news.naver.com/mnews/article/{x['officeId']}/{x['articleId']}"})
+                        "summary": _clean(x.get("body")), "url": x.get("mobileNewsUrl") or f"https://n.news.naver.com/mnews/article/{x['officeId']}/{x['articleId']}",
+                        "thumb": _thumb(x.get("imageOriginLink"))})
     return out
 
 
 def parse_naver_main(items: list[dict]) -> list[dict]:
     return [{"time": _kst(x["dt"]), "source": x.get("ohnm", ""), "title": _clean(x.get("tit"), 200), "summary": _clean(x.get("subcontent")),
-             "url": f"https://n.news.naver.com/mnews/article/{x['oid']}/{x['aid']}"} for x in items]
+             "url": f"https://n.news.naver.com/mnews/article/{x['oid']}/{x['aid']}", "thumb": _thumb(x.get("thumbUrl"))} for x in items]
 
 
 def parse_google(xml: str) -> list[dict]:
@@ -78,7 +84,7 @@ def parse_google(xml: str) -> list[dict]:
         if source and title.endswith(f" - {source}"):
             title = title[: -len(source) - 3]
         when = email.utils.parsedate_to_datetime(get("pubDate")).astimezone(KST).strftime("%Y-%m-%d %H:%M") if get("pubDate") else ""
-        out.append({"time": when, "source": source, "title": title, "summary": "", "url": html.unescape(get("link"))})
+        out.append({"time": when, "source": source, "title": title, "summary": "", "url": html.unescape(get("link")), "thumb": ""})
     return out
 
 

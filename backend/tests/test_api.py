@@ -110,3 +110,14 @@ def test_remote_decimals_handles_all_null_columns():
     from app import remote
     df = remote._decimals(pd.DataFrame({"a": [None, None], "b": [Decimal("1.5"), None], "c": ["x", "y"]}))
     assert df["b"].tolist()[0] == 1.5 and df["a"].isna().all() and df["c"].tolist() == ["x", "y"]
+
+
+def test_recent_part_needs_same_columns():
+    import datetime as dt
+
+    from app import remote
+    df = pd.DataFrame({"date": [dt.date.today()], "a": [1.0]})
+    old = remote.version(df)
+    assert remote.recent_part(df.assign(a=2.0), old) is not None             # same schema: splice the recent rows
+    assert remote.recent_part(df.assign(b=1.0), old) is None                 # new column: rewrite the table
+    assert remote.recent_part(df, {k: v for k, v in old.items() if k != "cols"}) is None   # published before cols existed

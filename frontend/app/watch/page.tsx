@@ -81,7 +81,7 @@ export default function Watch() {
           )}
         </Panel>
       )}
-      {items.length > 0 && <Panel title="관심종목 뉴스 (종목별 최근 5건)"><NewsList items={news.data ?? []} max={50} /></Panel>}
+      {items.length > 0 && <Panel title="관심종목 뉴스 (종목별 최근 5건)"><NewsList items={news.data ?? []} size={8} /></Panel>}
     </div>
   );
 }

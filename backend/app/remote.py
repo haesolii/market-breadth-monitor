@@ -112,7 +112,7 @@ def _h(df: pd.DataFrame) -> str:
 def version(df: pd.DataFrame) -> dict:
     """Content fingerprint published next to each table (read side skips unchanged tables).
     Dated tables also fingerprint the rows before `cut`, so a publish can rewrite only the recent part."""
-    v = {"hash": _h(df), "rows": len(df)}
+    v = {"hash": _h(df), "rows": len(df), "cols": list(map(str, df.columns))}
     if len(df) and "date" in df.columns:
         cut = max(df["date"]) - dt.timedelta(days=SPLICE_DAYS)
         v.update(cut=str(cut), head=_h(df[df["date"] < cut]))
@@ -120,8 +120,9 @@ def version(df: pd.DataFrame) -> dict:
 
 
 def recent_part(df: pd.DataFrame, old: dict | None):
-    """(cut, rows dated >= cut) when every row before the previous publish's cut is unchanged, else None."""
-    if not old or "cut" not in old or not len(df) or "date" not in df.columns:
+    """(cut, rows dated >= cut) when every row before the previous publish's cut is unchanged and the
+    columns are the same (a new column needs the table recreated), else None."""
+    if not old or "cut" not in old or not len(df) or "date" not in df.columns or old.get("cols") != list(map(str, df.columns)):
         return None
     cut = dt.date.fromisoformat(old["cut"])
     return (cut, df[df["date"] >= cut]) if _h(df[df["date"] < cut]) == old["head"] else None

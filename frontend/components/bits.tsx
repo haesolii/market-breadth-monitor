@@ -94,3 +94,36 @@ export function useSource(kind: "breadth20" | "monitor", tabs = false): [string,
 export function Err({ error }: { error: string | null }) {
   return error ? <div className="rounded border border-red-800 bg-red-950/60 px-3 py-2 text-sm text-red-300">오류 (Error): {error}</div> : null;
 }
+
+/** Underlined section tabs (one view at a time instead of a long scroll); counts shown as small badges. */
+export function TabBar<T extends string>({ value, onChange, tabs }: { value: T; onChange: (v: T) => void; tabs: [T, string, number?][] }) {
+  return (
+    <div className="flex gap-1 overflow-x-auto border-b border-zinc-800 [scrollbar-width:none]">
+      {tabs.map(([k, label, n]) => (
+        <button key={k} onClick={() => onChange(k)}
+          className={`-mb-px shrink-0 whitespace-nowrap border-b-2 px-3 py-2 text-sm ${value === k ? "border-sky-500 text-white" : "border-transparent text-zinc-400 hover:text-zinc-200"}`}>
+          {label}{n !== undefined && <span className="ml-1.5 rounded-full bg-zinc-800 px-1.5 text-[10px] text-zinc-400">{n}</span>}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/** Page numbers for a list: ‹ 1 2 3 … › (pages counted from 0). */
+export function Pager({ page, pages, onChange }: { page: number; pages: number; onChange: (p: number) => void }) {
+  if (pages <= 1) return null;
+  const near = [...new Set([0, page - 1, page, page + 1, pages - 1])].filter((p) => p >= 0 && p < pages).sort((a, b) => a - b);
+  const btn = "min-w-8 rounded px-2 py-1 text-xs";
+  return (
+    <div className="flex items-center justify-center gap-1 pt-3">
+      <button className={`${btn} text-zinc-400 hover:bg-zinc-800 disabled:opacity-30`} disabled={page === 0} onClick={() => onChange(page - 1)}>‹ 이전</button>
+      {near.map((p, i) => (
+        <span key={p} className="flex items-center gap-1">
+          {i > 0 && p - near[i - 1] > 1 && <span className="text-zinc-600">…</span>}
+          <button className={`${btn} ${p === page ? "bg-sky-700 text-white" : "text-zinc-300 hover:bg-zinc-800"}`} onClick={() => onChange(p)}>{p + 1}</button>
+        </span>
+      ))}
+      <button className={`${btn} text-zinc-400 hover:bg-zinc-800 disabled:opacity-30`} disabled={page >= pages - 1} onClick={() => onChange(page + 1)}>다음 ›</button>
+    </div>
+  );
+}

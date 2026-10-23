@@ -2,6 +2,7 @@
 import Link from "next/link";
 import { useState } from "react";
 import { Err, Panel } from "@/components/bits";
+import { NewsList, type Item as NewsItem } from "@/components/News";
 import { StockSearch, type Hit } from "@/components/StockSearch";
 import { send, useApi } from "@/lib/api";
 import { MK, stockHref } from "@/lib/stock";
@@ -17,6 +18,7 @@ const KIND: Record<string, string> = { 리포트: "bg-sky-900/60 text-sky-200", 
 
 export default function Watch() {
   const { data, error, reload } = useApi<Res>("/api/watchlist");
+  const news = useApi<NewsItem[]>(data?.items.length ? `/api/news/watch?n=${data.items.length}` : null);
   const [err, setErr] = useState<string | null>(null);
   const [kind, setKind] = useState("");
   const items = data?.items ?? [];
@@ -79,6 +81,7 @@ export default function Watch() {
           )}
         </Panel>
       )}
+      {items.length > 0 && <Panel title="관심종목 뉴스 (종목별 최근 5건)"><NewsList items={news.data ?? []} max={50} /></Panel>}
     </div>
   );
 }

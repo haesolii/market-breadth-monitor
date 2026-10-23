@@ -4,6 +4,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useMemo } from "react";
 import { Err, Kpi, Panel } from "@/components/bits";
 import { TimeChart } from "@/components/TimeChart";
+import { StockNews } from "@/components/News";
 import { StockSearch, type Hit } from "@/components/StockSearch";
 import { TVChart, tvLink, tvStock } from "@/components/TVChart";
 import { WatchStar } from "@/components/WatchStar";
@@ -74,6 +75,8 @@ function Detail({ t, m }: { t: string; m: string }) {
           <div className="text-[11px] text-zinc-500">외국인 지분율 {num(d.flow.hold_ratio.at(-1), 2)}% (120거래일 전 {num(d.flow.hold_ratio[0], 2)}%) · 순매수 = 순매수 주식 수 × 그날 종가</div>
         </Panel>
       )}
+
+      <Panel title={`${d.name} 뉴스`}><StockNews ticker={d.ticker} market={d.market} /></Panel>
 
       <div className="grid gap-3 xl:grid-cols-2">
         <Panel title={`같은 업종 대형주 (${d.sector})`}>

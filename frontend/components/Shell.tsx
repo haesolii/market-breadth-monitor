@@ -23,6 +23,7 @@ const MENU = [
   ["/watch", "15. 관심종목", "Watchlist & Alerts"],
   ["/calendar", "16. 일정 캘린더", "Earnings & Macro Calendar"],
   ["/term", "17. 변동성·선물 구조", "Volatility & Futures Curve"],
+  ["/news", "18. 뉴스", "News"],
 ];
 
 export const localTime = (iso?: string | null) => (iso ? new Date(iso).toLocaleString("ko-KR", { hour12: false }) : "—");

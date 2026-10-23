@@ -13,7 +13,7 @@ from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-from . import analyst, brief, calendar_, dart, earnings, etf, flows, kr_funds, leaders, term, watch, indicators, macro, refresh, remote, research, sectors, stock, store, universes, usage, validation, world
+from . import analyst, brief, calendar_, dart, earnings, etf, flows, kr_funds, leaders, news, term, watch, indicators, macro, refresh, remote, research, sectors, stock, store, universes, usage, validation, world
 from .config import MASSIVE_API_KEY, REFRESH_INTERVAL_MIN, YAHOO_SCANNER
 from .indicators import MM_COLS
 from .market_calendar import CALENDARS, latest_complete_session
@@ -70,7 +70,7 @@ async def require_login(request: Request, call_next):
 
 
 NO_CDN = {"/api/visit", "/api/login"}
-CDN_TTL = {"/api/status": (30, 30)}  # (seconds fresh, seconds served stale while refetching); data: at most ~2 min old
+CDN_TTL = {"/api/status": (30, 30), "/api/news/market": (300, 300), "/api/news/stock": (300, 300), "/api/news/watch": (300, 300)}  # (seconds fresh, seconds served stale while refetching); data: at most ~2 min old
 
 
 @app.get("/api/visit")
@@ -530,6 +530,21 @@ def kr_funds_view(days: int = Query(756, ge=20, le=2000)):
 @app.get("/api/dart/events")
 def dart_events(days: int = Query(14, ge=1, le=180), category: str = ""):
     return {"categories": [c for c, _ in dart.EVENTS], "rows": dart.events(days, category)}
+
+
+@app.get("/api/news/market")
+def news_market():
+    return news.market()
+
+
+@app.get("/api/news/stock")
+def news_stock(ticker: str, market: str):
+    return news.stock(ticker, market)
+
+
+@app.get("/api/news/watch")
+def news_watch():
+    return news.watch(watch.load())
 
 
 @app.get("/api/stock/search")

@@ -102,3 +102,11 @@ def test_leadlag_endpoint():
     j = c.get("/api/research/leadlag?source=yahoo&metric=t2108&days=0").json()
     assert j["lags"][0] == -20 and len(j["corr"]) == 41 and len(j["roll"]["r0"]) == len(j["dates"])
     assert c.get("/api/research/leadlag?source=yahoo&metric=nope").status_code == 400
+
+
+def test_remote_decimals_handles_all_null_columns():
+    from decimal import Decimal
+
+    from app import remote
+    df = remote._decimals(pd.DataFrame({"a": [None, None], "b": [Decimal("1.5"), None], "c": ["x", "y"]}))
+    assert df["b"].tolist()[0] == 1.5 and df["a"].isna().all() and df["c"].tolist() == ["x", "y"]

@@ -92,9 +92,14 @@ def _load(name: str, hit=None) -> pd.DataFrame:
 def _select(cur, sql: str, params=()) -> pd.DataFrame:
     cur.execute(sql, params)
     cols = [d.name for d in cur.description]
-    df = pd.DataFrame(cur.fetchall(), columns=cols)
-    for c in df.columns:  # Postgres numeric -> float, keep dates as date objects
-        if df[c].dtype == object and len(df) and type(df[c].dropna().iloc[0]).__name__ == "Decimal":
+    return _decimals(pd.DataFrame(cur.fetchall(), columns=cols))
+
+
+def _decimals(df: pd.DataFrame) -> pd.DataFrame:
+    """Postgres numeric -> float, keep dates as date objects. A column may be all NULL."""
+    for c in df.columns:
+        v = df[c].dropna() if df[c].dtype == object else ()
+        if len(v) and type(v.iloc[0]).__name__ == "Decimal":
             df[c] = df[c].astype(float)
     return df
 

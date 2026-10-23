@@ -138,7 +138,11 @@ def status():
            "expected_sessions": {c: str(latest_complete_session(cal=c)) for c in ("NYSE", "XKRX")},
            "final_hours": {c: h for c, (_, h) in CALENDARS.items()}, "refresh_min": REFRESH_INTERVAL_MIN}
     enabled = refresh.enabled_sources()
-    for s in ["indices", "macro", "public_repo", "yahoo", "nasdaq", "kospi", "kosdaq", "crypto", "massive", "sectors", "etf", "analyst", "earnings", "flows", "dart", "leaders", "calendar", "term", "kr_funds"]:
+    shown = ["indices", "macro", "public_repo", "yahoo", "nasdaq", "kospi", "kosdaq", "crypto", "massive", "sectors", "etf", "analyst",
+             "earnings", "flows", "dart", "leaders", "calendar", "term", "kr_funds"]
+    if remote.ON:  # one query for every source's latest date
+        remote.prefetch_max_dates([(refresh.OWN_TABLE.get(s, "breadth20"), None if s in refresh.OWN_TABLE else s) for s in shown])
+    for s in shown:
         ld = refresh.latest_date(s)
         derived = universes.UNIVERSES.get(s, {}).get("derived_from")
         out["sources"][s] = {**st["sources"].get(s, {}), "latest_date": str(ld) if ld else None,

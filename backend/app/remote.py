@@ -208,6 +208,27 @@ def select(name: str, col: str, value) -> pd.DataFrame:
     return df
 
 
+def prefetch_max_dates(pairs: list[tuple[str, str | None]]) -> None:
+    """Fill the max_date cache for many (table, source) pairs with one round trip."""
+    tables = sorted({t for t, _ in pairs})
+    with connection() as con, con.cursor() as cur:
+        cur.execute("SELECT tablename FROM pg_tables WHERE schemaname = current_schema() AND tablename = ANY(%s)", (tables,))
+        have = {r[0] for r in cur.fetchall()}
+        todo = [(t, s) for t, s in pairs if t in have]
+        if todo:
+            parts, args = [], []
+            for t, s in todo:
+                parts.append(f"SELECT %s, %s, max(date) FROM {_q(t)}" + (" WHERE source = %s" if s else ""))
+                args += [t, s or ""] + ([s] if s else [])
+            cur.execute(" UNION ALL ".join(parts), args)
+            got = {(t, s or None): d for t, s, d in cur.fetchall()}
+        else:
+            got = {}
+    with _lock:
+        for t, s in pairs:
+            _cache[f"m:{t}:{s}"] = (time.time(), got.get((t, s)))
+
+
 def max_date(name: str, source: str | None = None):
     """Latest date of a published table (optionally of one source) without loading the table."""
     key = f"m:{name}:{source}"

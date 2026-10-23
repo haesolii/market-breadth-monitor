@@ -64,6 +64,7 @@ jobs:
         env:
           DATA_DIR: ${{ github.workspace }}/data
           MASSIVE_API_KEY: ${{ secrets.MASSIVE_API_KEY }}
+          DART_API_KEY: ${{ secrets.DART_API_KEY }}
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
         run: |
           start=$(date +%s); fails=0

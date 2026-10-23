@@ -16,9 +16,9 @@ from . import refresh, remote, store, universes, validation, world
 from .config import DATA
 
 TABLES = ["breadth20", "market_monitor_daily", "indices", "macro", "sector_map", "sector_daily", "etf_latest", "etf_changes", "etf_funds",
-          "analyst_reports", "earnings", "macro_releases", "ai_brief"]
+          "analyst_reports", "earnings", "macro_releases", "ai_brief", "kr_flow", "kr_flow_market", "dart_prelim"]
 RESTORE = {"etf_changes": "etf_changes", "etf_snapshots": "etf_latest", "earnings": "earnings",
-           "macro_releases": "macro_releases", "ai_brief": "ai_brief"}  # local table <- published table
+           "macro_releases": "macro_releases", "ai_brief": "ai_brief", "kr_flow_market": "kr_flow_market"}  # local table <- published table
 SCAN_SESSIONS = 20  # recent sessions of per-ticker scan results kept for the dashboard
 
 

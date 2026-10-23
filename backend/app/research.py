@@ -107,9 +107,12 @@ def indicator_study(ind: pd.DataFrame, prices: pd.DataFrame, cols: list[str], da
     fr["r0"] = (fr["close"] / fr["close"].shift(1) - 1) * 100
     fr["p20"] = (fr["close"] / fr["close"].shift(20) - 1) * 100
     df = ind.merge(fr[["date", *RET_COLS]], on="date", how="left").sort_values("date")
+    sc = health_score(ind, cols)
+    df["score"] = df["date"].map(sc)
     if days:
         df = df.tail(days)
-    cols = [c for c in cols if c in df and df[c].notna().sum() >= 10]
+    score = [[str(d), round(float(v), 1)] for d, v in zip(df["date"], df["score"]) if not pd.isna(v)]
+    cols = [c for c in ["score", *cols] if c in df and df[c].notna().sum() >= 10]
     stats = []
     for c in cols:
         s = df[c].dropna()
@@ -120,6 +123,54 @@ def indicator_study(ind: pd.DataFrame, prices: pd.DataFrame, cols: list[str], da
     vs = m.corr(method="spearman", min_periods=20).loc[cols, list(RET_COLS)]
     cc = m[cols].corr(method="spearman", min_periods=20)
     mat = lambda x: [[None if pd.isna(v) else round(float(v), 2) for v in row] for row in x.to_numpy()]  # noqa: E731
-    return {"range": [str(df["date"].iloc[0]), str(df["date"].iloc[-1])] if len(df) else [], "n": len(df), "stats": stats,
+    return {"range": [str(df["date"].iloc[0]), str(df["date"].iloc[-1])] if len(df) else [], "n": len(df), "stats": stats, "score": score,
             "vs_returns": {"rows": cols, "cols": list(RET_COLS.values()), "matrix": mat(vs)},
             "between": {"rows": cols, "matrix": mat(cc)}}
+
+
+# Indicators whose higher value means a weaker market (inverted in the health score).
+WEAK = {"bear", "down4", "quarter_down25", "month_down25", "month_down50", "day34_down13"}
+SCORE_WIN = 252
+
+
+def health_score(ind: pd.DataFrame, cols: list[str], win: int = SCORE_WIN) -> pd.Series:
+    """0-100 market health per date: the mean over indicators of each one's percentile within its own
+    trailing `win` sessions (weak-side indicators inverted). 50 = an ordinary day for this market.
+    Trailing only, so a past score used only data known on that date."""
+    df = ind.sort_values("date").set_index("date")
+    pct = []
+    for c in cols:
+        if c not in df or df[c].notna().sum() < 60:
+            continue
+        p = df[c].rolling(win, min_periods=60).rank(pct=True) * 100
+        pct.append(100 - p if c in WEAK else p)
+    return pd.concat(pct, axis=1).mean(axis=1).rename("score") if pct else pd.Series(dtype=float, name="score")
+
+
+LAGS = range(-20, 21)
+ROLL = 60
+
+
+def lead_lag(ind: pd.DataFrame, prices: pd.DataFrame, col: str, days: int | None = None) -> dict:
+    """Spearman correlation of the indicator on day t with the benchmark's 5-session return ending at
+    t+k, for k = -20..20 (k <= 0: the move that already happened, k >= 5: entirely after t), and the
+    trailing ROLL-session (Pearson) correlation with the same-day and next-20-day return over time."""
+    fr = forward_returns(prices).set_index("date")
+    r5 = (fr["close"] / fr["close"].shift(5) - 1) * 100
+    df = ind.set_index("date")[[col]].join(fr[["close", "r20"]], how="inner").sort_index()
+    df["r0"] = (df["close"] / df["close"].shift(1) - 1) * 100
+    df = df.join(r5.rename("r5b"))
+    if days:
+        df = df.tail(days)
+    x = df[col]
+    lag = []
+    for k in LAGS:
+        y = df["r5b"].shift(-k)
+        both = pd.concat([x, y], axis=1).dropna()
+        lag.append(None if len(both) < 30 else round(float(both.iloc[:, 0].rank().corr(both.iloc[:, 1].rank())), 3))
+    roll = {c: x.rolling(ROLL, min_periods=ROLL).corr(df[c]) for c in ("r0", "r20")}
+    best = max((i for i, v in enumerate(lag) if v is not None), key=lambda i: abs(lag[i]), default=None)
+    return {"metric": col, "n": int(x.notna().sum()), "lags": list(LAGS), "corr": lag,
+            "peak": None if best is None else {"lag": LAGS[best], "corr": lag[best]},
+            "dates": [str(d) for d in df.index], "roll": {c: [None if pd.isna(v) else round(float(v), 3) for v in s] for c, s in roll.items()},
+            "window": ROLL}

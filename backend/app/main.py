@@ -13,7 +13,7 @@ from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-from . import analyst, brief, earnings, etf, indicators, macro, refresh, remote, research, sectors, store, universes, usage, validation, world
+from . import analyst, brief, dart, earnings, etf, flows, indicators, macro, refresh, remote, research, sectors, stock, store, universes, usage, validation, world
 from .config import MASSIVE_API_KEY, REFRESH_INTERVAL_MIN, YAHOO_SCANNER
 from .indicators import MM_COLS
 from .market_calendar import CALENDARS, latest_complete_session
@@ -136,7 +136,7 @@ def status():
            "expected_sessions": {c: str(latest_complete_session(cal=c)) for c in ("NYSE", "XKRX")},
            "final_hours": {c: h for c, (_, h) in CALENDARS.items()}, "refresh_min": REFRESH_INTERVAL_MIN}
     enabled = refresh.enabled_sources()
-    for s in ["indices", "macro", "public_repo", "yahoo", "nasdaq", "kospi", "kosdaq", "crypto", "massive", "sectors", "etf", "analyst", "earnings"]:
+    for s in ["indices", "macro", "public_repo", "yahoo", "nasdaq", "kospi", "kosdaq", "crypto", "massive", "sectors", "etf", "analyst", "earnings", "flows", "dart"]:
         ld = refresh.latest_date(s)
         derived = universes.UNIVERSES.get(s, {}).get("derived_from")
         out["sources"][s] = {**st["sources"].get(s, {}), "latest_date": str(ld) if ld else None,
@@ -273,6 +273,22 @@ def research_flow(source: str | None = None, days: int = Query(252, ge=0, le=500
     benchmark = benchmark or universes.benchmark_of(source)
     res = research.indicator_study(mm, benchmark_prices(benchmark), ["bull", "bear", *MM_COLS], days or None)
     return {"source": source, "benchmark": benchmark, **res}
+
+
+@app.get("/api/research/leadlag")
+def research_leadlag(source: str | None = None, metric: str = "t2108", days: int = Query(756, ge=0, le=5000), benchmark: str | None = None):
+    """Lead / lag and rolling correlation of one indicator (or the health score) with the benchmark."""
+    source, mm = table_for("market_monitor_daily", source if source in available("market_monitor_daily") else None)
+    b20 = store.read("breadth20")
+    if len(b20):
+        mm = mm.merge(b20[b20["source"] == source][["date", "bull", "bear"]], on="date", how="left")
+    if metric == "score":
+        sc = research.health_score(mm, ["bull", "bear", *MM_COLS])
+        mm = mm.assign(score=mm["date"].map(sc))
+    elif metric not in mm:
+        raise HTTPException(400, "unknown metric")
+    benchmark = benchmark or universes.benchmark_of(source)
+    return {"source": source, "benchmark": benchmark, **research.lead_lag(mm[["date", metric]], benchmark_prices(benchmark), metric, days or None)}
 
 
 def benchmark_prices(symbol: str) -> pd.DataFrame:
@@ -453,6 +469,30 @@ def analyst_feed(days: int = Query(7, ge=1, le=365), q: str = "", kind: str = "a
 @app.get("/api/analyst/stock")
 def analyst_stock(code: str):
     return analyst.stock(code)
+
+
+@app.get("/api/flows")
+def kr_flows(days: int = Query(120, ge=5, le=400)):
+    st = store.status()["sources"].get("flows", {})
+    return {**flows.overview(days), "last_success": st.get("last_success"), "last_error": st.get("last_error")}
+
+
+@app.get("/api/dart")
+def dart_prelim(days: int = Query(30, ge=1, le=365)):
+    return {"enabled": bool(dart.DART_API_KEY) or not store.read("dart_prelim").empty, "rows": dart.view(days)}
+
+
+@app.get("/api/stock/search")
+def stock_search(q: str = ""):
+    return stock.search(q)
+
+
+@app.get("/api/stock")
+def stock_detail(ticker: str, market: str | None = None):
+    d = stock.detail(ticker, market)
+    if d is None:
+        raise HTTPException(404, f"'{ticker}' 종목을 찾을 수 없습니다 (섹터 맵에 있는 종목만 조회 가능)")
+    return d
 
 
 @app.get("/api/earnings")

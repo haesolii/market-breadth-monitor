@@ -1,10 +1,12 @@
 "use client";
+import Link from "next/link";
 import { Fragment, useState } from "react";
 import { Err, Panel, Select } from "@/components/bits";
 import { Input } from "@/components/ui/input";
 import { useApi } from "@/lib/api";
 import { downloadCSV } from "@/lib/csv";
 import { useSetting } from "@/lib/settings";
+import { stockHref } from "@/lib/stock";
 
 type Rep = { nid: number; date: string; broker: string; code: string; name: string; title: string; summary: string; goal: number | null; opinion: string;
   prev_goal: number | null; goal_chg: number | null; react1d: number | null; ret_since: number | null; last_close: number | null; upside: number | null };
@@ -109,7 +111,7 @@ function Analyst() {
         </div>
       </div>
       {code && (
-        <Panel title={`${st.data?.name ?? code} (${code}) — 증권사 리포트 이력`} right={<button className="text-xs text-zinc-400" onClick={() => setCode(null)}>닫기</button>}>
+        <Panel title={`${st.data?.name ?? code} (${code}) — 증권사 리포트 이력`} right={<><Link className="text-xs text-sky-400 hover:underline" href={stockHref(code)}>종목 상세 →</Link><button className="text-xs text-zinc-400" onClick={() => setCode(null)}>닫기</button></>}>
           <Err error={st.error} />
           {st.data?.consensus && (
             <div className="mb-2 flex flex-wrap gap-4 font-mono text-xs">
@@ -194,12 +196,47 @@ function Earnings() {
   );
 }
 
+type Dart = { rcept_no: string; date: string; code: string; name: string; market: string; title: string; react: number | null; ret_since: number | null; url: string };
+
+function DartPrelim() {
+  const [days, setDays] = useSetting("reports.dart.days", "30");
+  const { data, error } = useApi<{ enabled: boolean; rows: Dart[] }>(`/api/dart?days=${days}`);
+  return (
+    <Panel title="잠정실적 공시 (한국, DART)" right={<Select value={days} onChange={setDays} options={[["7", "7일"], ["30", "30일"], ["90", "90일"]]} />}>
+      <Err error={error} />
+      {data && !data.enabled ? (
+        <div className="text-xs text-zinc-400">
+          DART API 키가 없어 꺼져 있습니다. <a className="text-sky-400 hover:underline" href="https://opendart.fss.or.kr" target="_blank" rel="noreferrer">opendart.fss.or.kr</a>에서 무료 인증키를 받아
+          GitHub Secret <code>DART_API_KEY</code>(로컬은 .env)에 넣으면 다음 갱신부터 최근 120일 공시가 수집됩니다.
+        </div>
+      ) : (
+        <div className="max-h-[640px] overflow-auto">
+          <table className="w-full font-mono text-xs">
+            <thead className="sticky top-0 bg-zinc-900 text-zinc-400"><tr><th className="text-left">공시일</th><th className="text-left">종목</th><th className="text-left">공시</th>
+              <th title="공시일 전 거래일 종가 → 공시일 다음 거래일 종가 (공시 시각을 몰라 2거래일로 측정)">반응</th><th title="공시 전 종가 → 최근 종가">이후</th></tr></thead>
+            <tbody>{(data?.rows ?? []).map((r) => (
+              <tr key={r.rcept_no} className="border-t border-zinc-900 text-center hover:bg-zinc-900">
+                <td className="text-left">{r.date}</td>
+                <td className="text-left font-sans"><Link className="text-sky-300 hover:underline" href={stockHref(r.code, r.market)}>{r.name}</Link> <span className="text-zinc-500">{r.code}</span></td>
+                <td className="text-left font-sans"><a className="hover:underline" href={r.url} target="_blank" rel="noreferrer">{r.title}</a></td>
+                <td className={tone(r.react)}>{pct(r.react)}</td><td className={tone(r.ret_since)}>{pct(r.ret_since)}</td>
+              </tr>
+            ))}</tbody>
+          </table>
+          {data && !data.rows.length && <div className="py-6 text-center text-xs text-zinc-500">해당 기간 잠정실적 공시 없음</div>}
+          <div className="mt-1 text-[11px] text-zinc-500">DART 목록 API는 실적 수치를 주지 않으므로 공시 제목을 누르면 원문(매출·영업이익)이 열립니다.</div>
+        </div>
+      )}
+    </Panel>
+  );
+}
+
 export default function Reports() {
   const [tab, setTab] = useSetting("reports.tab", "analyst");
   return (
     <div className="space-y-3">
-      <Tabs value={tab} onChange={setTab} options={[["analyst", "증권사 리포트 (한국)"], ["earnings", "실적 발표 (미국)"]]} />
-      {tab === "analyst" ? <Analyst /> : <Earnings />}
+      <Tabs value={tab} onChange={setTab} options={[["analyst", "증권사 리포트 (한국)"], ["dart", "잠정실적 (한국)"], ["earnings", "실적 발표 (미국)"]]} />
+      {tab === "analyst" ? <Analyst /> : tab === "dart" ? <DartPrelim /> : <Earnings />}
     </div>
   );
 }

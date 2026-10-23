@@ -17,6 +17,8 @@ const MENU = [
   ["/sectors", "9. 섹터 히트맵", "Sector Heatmap"],
   ["/etf", "10. 액티브 ETF", "Active ETF Holdings"],
   ["/reports", "11. 리포트·실적", "Reports & Earnings"],
+  ["/flows", "12. 한국 수급", "Korea Investor Flows"],
+  ["/stock", "13. 종목 상세", "Stock Detail"],
 ];
 
 export const localTime = (iso?: string | null) => (iso ? new Date(iso).toLocaleString("ko-KR", { hour12: false }) : "—");

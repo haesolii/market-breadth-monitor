@@ -112,12 +112,15 @@ def returns(bars: pd.DataFrame, p: universes.Params, steps: tuple[int, ...]) -> 
     out["ytd"] = (out["close"] / py - 1) * 100
     out["turnover"] = (b.assign(tv=b["close"] * b["volume"]).groupby("base")["tv"]
                        .apply(lambda s: s.tail(20).mean()))
-    daily = pd.DataFrame({"ticker": b["base"], "date": b["date"], "r": g["close"].pct_change()}).dropna()
+    ma40 = g["close"].transform(lambda c: c.rolling(40, min_periods=40).mean())
+    daily = pd.DataFrame({"ticker": b["base"], "date": b["date"], "r": g["close"].pct_change(),
+                          "above": (b["close"] > ma40).astype(float).where(ma40.notna())}).dropna(subset=["r"])
     return out.rename_axis("ticker").reset_index(), daily
 
 
 def sector_daily(daily: pd.DataFrame, stocks: pd.DataFrame) -> pd.DataFrame:
-    """Daily return of each sector (and ALL) weighted by each stock's current size.
+    """Daily return of each sector (and ALL) weighted by each stock's current size, and the share of
+    its stocks above their 40-day average (the sector's own T2108; equal-weighted).
     ponytail: today's constituents and weights applied to the whole year (no historical caps or
     delisted names); a true index needs point-in-time caps."""
     d = daily.merge(stocks[["ticker", "sector", "size"]], on="ticker").dropna(subset=["size"])
@@ -126,6 +129,8 @@ def sector_daily(daily: pd.DataFrame, stocks: pd.DataFrame) -> pd.DataFrame:
     g = d.groupby(["sector", "date"])
     out = (g["wr"].sum() / g["size"].sum()).rename("ret").reset_index()
     out["n"] = g.size().to_numpy()
+    if "above" in d:
+        out["above"] = (g["above"].mean() * 100).to_numpy()
     return out
 
 
@@ -224,8 +229,10 @@ def history(market: str, days: int = 252, picked: list[str] | None = None, top: 
     sd = sd[sd["market"] == market] if len(sd) else sd
     if sd.empty:
         return {"market": market, "dates": [], "picked": [], "series": {}, "stats": [], "corr": {"sectors": [], "matrix": []}}
-    w = sd.pivot_table(index="date", columns="sector", values="ret").sort_index()
-    w = (w[w[ALL].notna()] if ALL in w else w).tail(days)
+    full = sd.pivot_table(index="date", columns="sector", values="ret").sort_index()
+    full = full[full[ALL].notna()] if ALL in full else full
+    w = full.tail(days)
+    ab = sd.pivot_table(index="date", columns="sector", values="above").reindex(w.index) if "above" in sd else pd.DataFrame(index=w.index)
     sizes = summary(market, "r1d", leaves=0)["sectors"]
     order = [x["sector"] for x in sizes]
     n = {x["sector"]: x["n"] for x in sizes}
@@ -240,10 +247,44 @@ def history(market: str, days: int = 252, picked: list[str] | None = None, top: 
         beta = float(both.iloc[:, 0].cov(both.iloc[:, 1]) / both.iloc[:, 1].var()) if len(both) > 5 else None
         stats.append({"sector": sec, "n": n.get(sec, len(r) and None), "ret": float(((1 + r).prod() - 1) * 100),
                       "vol": float(r.std() * year ** 0.5 * 100),
-                      "corr": float(both.iloc[:, 0].corr(both.iloc[:, 1])) if len(both) > 5 else None, "beta": beta})
+                      "corr": float(both.iloc[:, 0].corr(both.iloc[:, 1])) if len(both) > 5 else None, "beta": beta,
+                      "above": _last(ab, sec, 1), "above20": _last(ab, sec, 21)})
     picked = [p for p in (picked or []) if p in w] or [c for c in [ALL, *[s for s in order if n.get(s, 0) >= 3][:top]] if c in w]
     level = (1 + w[picked].fillna(0)).cumprod() * 100
     cm = w[picked].corr(min_periods=max(5, len(w) // 3)).round(2)
     return {"market": market, "days": len(w), "dates": [str(d) for d in w.index], "picked": picked,
             "series": {c: [round(float(v), 2) for v in level[c]] for c in picked}, "stats": stats,
+            "breadth": {c: [None if pd.isna(v) else round(float(v), 1) for v in ab[c]] for c in picked if c in ab},
+            "rrg": rrg(full, [c for c in picked if c != ALL]),
             "corr": {"sectors": picked, "matrix": [[None if pd.isna(v) else float(v) for v in row] for row in cm.to_numpy()]}}
+
+
+def _last(ab: pd.DataFrame, sec: str, back: int) -> float | None:
+    if sec not in ab:
+        return None
+    v = ab[sec].dropna()
+    return round(float(v.iloc[-back]), 1) if len(v) >= back else None
+
+
+RRG_SMOOTH, RRG_MOM, RRG_TAIL, RRG_STEP = 50, 10, 8, 5
+
+
+def rrg(daily: pd.DataFrame, picked: list[str]) -> dict:
+    """Relative-rotation coordinates of each sector vs the whole market (JdK-style approximation):
+    RS = sector index / market index; RS-Ratio = 100 * RS / its 50-session mean (above 100 = leading
+    the market); RS-Momentum = 100 * RS-Ratio / RS-Ratio 10 sessions ago (above 100 = improving).
+    Tail: the last RRG_TAIL points, one per RRG_STEP sessions (weekly)."""
+    if ALL not in daily or len(daily) < RRG_SMOOTH + RRG_MOM + 5:
+        return {"dates": [], "tails": {}}
+    lv = (1 + daily.fillna(0)).cumprod()
+    out, dates = {}, []
+    for sec in picked:
+        if sec not in lv:
+            continue
+        rs = lv[sec] / lv[ALL]
+        ratio = 100 * rs / rs.rolling(RRG_SMOOTH).mean()
+        mom = 100 * ratio / ratio.shift(RRG_MOM)
+        pts = pd.concat([ratio, mom], axis=1).dropna().iloc[::-RRG_STEP].iloc[:RRG_TAIL][::-1]
+        out[sec] = [[round(float(a), 2), round(float(b), 2)] for a, b in pts.to_numpy()]
+        dates = [str(d) for d in pts.index]
+    return {"dates": dates, "tails": out}

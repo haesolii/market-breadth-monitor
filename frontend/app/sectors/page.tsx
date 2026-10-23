@@ -1,6 +1,7 @@
 "use client";
 import dynamic from "next/dynamic";
 import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { Err, Panel } from "@/components/bits";
 import { CorrHeatmap } from "@/components/CorrHeatmap";
 import { TimeChart } from "@/components/TimeChart";
@@ -20,8 +21,45 @@ const WINDOWS: [string, string][] = [["21", "1개월"], ["63", "3개월"], ["126
 const LINE = ["#e4e4e7", "#38bdf8", "#f59e0b", "#a78bfa", "#10b981", "#f472b6", "#fb923c", "#2dd4bf"];
 const MAX_LINES = LINE.length;
 type Hist = { days: number; dates: string[]; picked: string[]; series: Record<string, number[]>;
-  stats: { sector: string; n: number | null; ret: number; vol: number; corr: number | null; beta: number | null }[];
-  corr: { sectors: string[]; matrix: (number | null)[][] } };
+  stats: { sector: string; n: number | null; ret: number; vol: number; corr: number | null; beta: number | null; above: number | null; above20: number | null }[];
+  corr: { sectors: string[]; matrix: (number | null)[][] }; breadth: Record<string, (number | null)[]>;
+  rrg: { dates: string[]; tails: Record<string, [number, number][]> } };
+
+const QUAD: [string, string, number, number][] = [["주도 (Leading)", "#10b981", 1, 1], ["약화 (Weakening)", "#f59e0b", 1, -1], ["부진 (Lagging)", "#ef4444", -1, -1], ["개선 (Improving)", "#38bdf8", -1, 1]];
+
+/** Relative rotation: x = strength vs the market (100 = in line), y = whether that strength is rising.
+ * Sectors usually rotate clockwise: 개선 → 주도 → 약화 → 부진. */
+function Rrg({ rrg, picked }: { rrg: Hist["rrg"]; picked: string[] }) {
+  const option = useMemo(() => {
+    const secs = picked.filter((p) => rrg.tails[p]?.length);
+    const all = secs.flatMap((p) => rrg.tails[p]);
+    const ext = (i: 0 | 1) => Math.max(2, ...all.map((v) => Math.abs(v[i] - 100))) * 1.15;
+    const ex = ext(0), ey = ext(1);
+    return {
+      backgroundColor: "transparent", animation: false, grid: { left: 48, right: 16, top: 16, bottom: 40 },
+      tooltip: { backgroundColor: "#18181b", borderColor: "#3f3f46", textStyle: { color: "#e4e4e7", fontSize: 12 },
+        formatter: (p: { seriesName: string; value: [number, number]; dataIndex: number }) =>
+          `<b>${p.seriesName}</b> ${rrg.dates[rrg.dates.length - (rrg.tails[p.seriesName]?.length ?? 0) + p.dataIndex] ?? ""}<br/>상대강도 ${p.value[0].toFixed(1)} · 모멘텀 ${p.value[1].toFixed(1)}` },
+      xAxis: { type: "value", min: 100 - ex, max: 100 + ex, name: "상대강도 (RS-Ratio)", nameLocation: "middle", nameGap: 26, nameTextStyle: { color: "#71717a", fontSize: 10 },
+        axisLabel: { color: "#71717a", fontSize: 10, formatter: (v: number) => v.toFixed(0) }, splitLine: { show: false } },
+      yAxis: { type: "value", min: 100 - ey, max: 100 + ey, name: "모멘텀", nameTextStyle: { color: "#71717a", fontSize: 10 },
+        axisLabel: { color: "#71717a", fontSize: 10, formatter: (v: number) => v.toFixed(0) }, splitLine: { show: false } },
+      series: [
+        { type: "line", data: [], silent: true, markArea: { silent: true, data: QUAD.map(([n, c, sx, sy]) => [
+          { coord: [100, 100], itemStyle: { color: c, opacity: 0.06 }, label: { show: true, color: c, fontSize: 11, position: sx > 0 ? (sy > 0 ? "insideTopRight" : "insideBottomRight") : (sy > 0 ? "insideTopLeft" : "insideBottomLeft"), formatter: n } },
+          { coord: [100 + sx * ex, 100 + sy * ey] }]) } },
+        ...secs.map((p) => {
+          const c = LINE[picked.indexOf(p) % LINE.length], t = rrg.tails[p];
+          return { name: p, type: "line", data: t, lineStyle: { color: c, width: 2 }, itemStyle: { color: c, borderColor: "#09090b", borderWidth: 2 },
+            symbol: "circle", symbolSize: (_: unknown, i: { dataIndex: number }) => (i.dataIndex === t.length - 1 ? 10 : 4),
+            label: { show: true, formatter: (x: { dataIndex: number }) => (x.dataIndex === t.length - 1 ? p : ""), color: "#e4e4e7", fontSize: 11, position: "right" } };
+        }),
+      ],
+    };
+  }, [rrg, picked]);
+  if (!rrg.dates.length) return <div className="text-xs text-zinc-500">기간이 짧아 계산할 수 없습니다 (60거래일 이상 필요).</div>;
+  return <ReactECharts option={option} notMerge style={{ height: 440 }} theme="dark" />;
+}
 
 /** Sector indexes (=100) on one axis, their correlation matrix, and return / volatility / beta per sector. */
 function SectorTrend({ market, picked, setPicked }: { market: string; picked: string[]; setPicked: (p: string[]) => void }) {
@@ -52,6 +90,7 @@ function SectorTrend({ market, picked, setPicked }: { market: string; picked: st
               <thead className="sticky top-0 bg-zinc-900 text-zinc-400"><tr>
                 <th className="text-left">섹터</th><th>기간 수익률</th><th title="일간 수익률 표준편차 × √연간 거래일">연 변동성</th>
                 <th title="시장 전체와의 일간 수익률 상관계수">시장 상관</th><th title="시장이 1% 움직일 때 섹터가 움직인 평균 폭">베타</th>
+                <th title="40일 이동평균 위에 있는 종목 비율 (현재 / 20거래일 전)">40일선 위</th>
               </tr></thead>
               <tbody>
                 {data.stats.map((s) => {
@@ -64,12 +103,26 @@ function SectorTrend({ market, picked, setPicked }: { market: string; picked: st
                       </td>
                       <td className={tone(s.ret)}>{pct(s.ret, 1)}</td><td>{s.vol.toFixed(1)}%</td>
                       <td>{s.corr === null ? "—" : s.corr.toFixed(2)}</td><td>{s.beta === null ? "—" : s.beta.toFixed(2)}</td>
+                      <td className={s.above === null ? "" : s.above >= 70 ? "text-emerald-400" : s.above < 30 ? "text-red-400" : ""}>
+                        {s.above === null ? "—" : `${s.above.toFixed(0)}%`}<span className="text-zinc-500">{s.above20 === null ? "" : ` ← ${s.above20.toFixed(0)}`}</span>
+                      </td>
                     </tr>
                   );
                 })}
               </tbody>
             </table>
           </div>
+        </Panel>
+        <Panel title="섹터 순환 지도 (RRG, 시장 전체 대비)">
+          <Rrg rrg={data.rrg} picked={data.picked} />
+          <div className="text-[11px] text-zinc-500">
+            점 = 주 단위 최근 {data.rrg.dates.length}개 위치, 큰 점 = 현재. 오른쪽 = 시장보다 강함, 위쪽 = 강해지는 중. 섹터는 보통 시계 방향(개선 → 주도 → 약화 → 부진)으로 돕니다.
+            JdK RRG 공식은 비공개라 50일 평균 대비 상대강도·10일 변화로 근사했습니다.
+          </div>
+        </Panel>
+        <Panel title="섹터별 40일선 위 종목 비율 (섹터의 T2108)">
+          <TimeChart dates={data.dates} series={data.picked.filter((k) => data.breadth[k]).map((k) => ({ name: k, data: data.breadth[k], color: LINE[data.picked.indexOf(k) % LINE.length], type: "line" as const }))} height={360} />
+          <div className="text-[11px] text-zinc-500">지수(시가총액 가중)는 대형주 몇 개로 움직일 수 있습니다. 이 비율은 섹터 안 종목이 고르게 오르는지(동일 가중)를 봅니다. 지수는 오르는데 비율이 떨어지면 소수 종목만 끌어올리는 상태입니다.</div>
         </Panel>
         <Panel title="선택 섹터 간 일간 수익률 상관계수">
           <CorrHeatmap rows={data.corr.sectors} matrix={data.corr.matrix} height={440} left={130} />
@@ -103,6 +156,7 @@ export default function Sectors() {
   const [picked, setPicked] = useState<string[]>([]);
   useEffect(() => setPicked([]), [market]);
   const [period, setPeriod] = useSetting("sectors.period", "r1d");
+  const router = useRouter();
   const { data, error, loading } = useApi<Res>(`/api/sectors?market=${market}&period=${period}`, LIVE_MS);
   const span = PERIODS.find((p) => p[0] === period)?.[2] ?? 5;
   const sizeLabel = market === "crypto" ? "20일 평균 거래대금" : "시가총액";
@@ -146,9 +200,10 @@ export default function Sectors() {
         <Err error={error} />
         {loading && !data && <div className="text-xs text-zinc-500">불러오는 중…</div>}
         {data && !data.stocks.length && <div className="text-xs text-zinc-500">데이터가 아직 없습니다 (섹터 갱신 전).</div>}
-        {option && data!.stocks.length > 0 && <ReactECharts option={option} notMerge style={{ height: 620 }} theme="dark" />}
+        {option && data!.stocks.length > 0 && <ReactECharts option={option} notMerge style={{ height: 620 }} theme="dark"
+          onEvents={{ dblclick: (p: { data?: { s?: Stock } }) => p.data?.s && router.push(`/stock?t=${encodeURIComponent(p.data.s.ticker)}&m=${market === "nasdaq" ? "yahoo" : market}`) }} />}
         <div className="mt-1 flex flex-wrap items-center gap-3 text-[11px] text-zinc-500">
-          <span>기준일 {data?.date ?? "—"} · {data?.n?.toLocaleString() ?? "—"}종목 중 {sizeLabel} 상위 {data?.stocks.length ?? 0}개 표시 · 칸 크기 = {sizeLabel} · 섹터 클릭 시 확대</span>
+          <span>기준일 {data?.date ?? "—"} · {data?.n?.toLocaleString() ?? "—"}종목 중 {sizeLabel} 상위 {data?.stocks.length ?? 0}개 표시 · 칸 크기 = {sizeLabel} · 섹터 클릭 시 확대 · 종목 더블클릭 시 종목 상세</span>
           <span className="flex items-center gap-1">{pct(-span, 0)}<span className="inline-block h-2 w-24 rounded" style={{ background: `linear-gradient(90deg, ${DIV.join(",")})` }} />{pct(span, 0)}</span>
           <span>{market === "yahoo" || market === "nasdaq" ? "섹터: Nasdaq 스크리너" : market === "crypto" ? "크립토는 섹터 구분 없음" : "업종: 네이버 업종 분류"}</span>
         </div>

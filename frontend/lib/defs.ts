@@ -98,10 +98,12 @@ const CAL: Record<string, Record<string, Record<number, number>>> = {
     quarter_up25: { 200: 5, 500: 25 }, month_up25: { 200: 40 }, month_down25: { 200: 45 },
     month_up50: { 20: 3 }, month_down50: { 20: 1 }, bear: { 50: 40, 100: 180, 150: 245 } },
 };
+/** A "broad" reading needs at least this many stocks: a calibrated 1-3 (e.g. KOSPI 50% movers) is noise. */
+export const MIN_N = 5;
 /** A US count threshold of indicator `key` expressed for this row's market (rows carry `market`). */
 export const cnt = (base: number, x: Vals, key: string) =>
-  CAL[String((x as Record<string, unknown>).market)]?.[key]?.[base]
-  ?? Math.max(1, Math.ceil(base * scaleOf(x) - 1e-9));  // round up: small markets stay conservative
+  Math.max(MIN_N, CAL[String((x as Record<string, unknown>).market)]?.[key]?.[base]
+    ?? Math.ceil(base * scaleOf(x) - 1e-9));  // round up: small markets stay conservative
 
 export type Levels = Record<string, [number | null, number | null]>;
 /** Default highlight levels; count levels scaled to the universe size `n` (latest eligible count). */

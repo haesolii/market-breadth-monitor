@@ -1,10 +1,12 @@
 "use client";
+import Link from "next/link";
 import { useMemo, useState } from "react";
 import { Err, Panel, Select } from "@/components/bits";
 import { Input } from "@/components/ui/input";
 import { useApi } from "@/lib/api";
 import { downloadCSV } from "@/lib/csv";
 import { useSetting } from "@/lib/settings";
+import { stockByName, stockHref } from "@/lib/stock";
 
 type Fund = { etf: string; name: string; market: string; aum: number | null; ret3m: number | null; date: string | null; holdings: number; changes: number; top: string[] };
 type Change = { date: string; etf: string; etf_name: string; market: string; name: string; ticker: string; kind: string;
@@ -65,7 +67,7 @@ export default function EtfPage() {
                   <tr key={i} className="border-t border-zinc-900 text-center hover:bg-zinc-900">
                     <td className="text-left">{c.date.slice(5)}</td>
                     <td className="max-w-48 cursor-pointer truncate text-left font-sans text-sky-300" title={c.etf_name} onClick={() => setSel(c.etf)}>{c.etf_name}</td>
-                    <td className="max-w-56 truncate text-left font-sans" title={c.name}>{c.name}{c.ticker && <span className="ml-1 text-zinc-500">{c.ticker}</span>}</td>
+                    <td className="max-w-56 truncate text-left font-sans" title={c.name}><Link className="hover:underline" href={c.ticker ? stockHref(c.ticker) : stockByName(c.name)}>{c.name}</Link>{c.ticker && <span className="ml-1 text-zinc-500">{c.ticker}</span>}</td>
                     <td><Badge k={c.kind} /></td>
                     <td>{num(c.shares_prev)} → {num(c.shares)} <span className={tone(c.shares && c.shares_prev ? c.shares - c.shares_prev : null)}>{shareChg(c.shares_prev, c.shares)}</span></td>
                     <td>{c.weight_prev?.toFixed(2) ?? "—"} → {c.weight?.toFixed(2) ?? "—"}%</td>
@@ -85,7 +87,7 @@ export default function EtfPage() {
               <tbody>
                 {(data?.consensus ?? []).filter((c) => inMkt(c.market)).map((c) => (
                   <tr key={c.market + c.name} className="border-t border-zinc-900 text-center">
-                    <td className="text-left">{c.name}</td>
+                    <td className="text-left"><Link className="hover:underline" href={c.ticker ? stockHref(c.ticker) : stockByName(c.name)}>{c.name}</Link></td>
                     <td className="text-emerald-400" title={c.buy.join("\n")}>{c.buy.length || ""}</td>
                     <td className="text-red-400" title={c.sell.join("\n")}>{c.sell.length || ""}</td>
                     <td className={`font-mono ${tone(c.ret1d)}`}>{pct(c.ret1d)}</td>

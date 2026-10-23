@@ -54,3 +54,17 @@ def test_sector_index_history_and_beta():
     st = {x["sector"]: x for x in h["stats"]}
     assert round(st["나"]["beta"], 6) == round(0.02 / 0.015, 6) and round(st["가"]["corr"], 6) == 1.0
     assert h["series"][sectors.ALL][0] == round((1 + 0.015) * 100, 2) and h["corr"]["matrix"][0][0] == 1.0
+
+
+def test_sector_breadth_and_rrg():
+    n = 120
+    days = [dt.date(2026, 1, 1) + dt.timedelta(days=i) for i in range(n)]
+    daily = pd.DataFrame([(t, d, r, a) for i, d in enumerate(days) for t, r, a in
+                          (("A", 0.01, 1.0), ("B", -0.005, 0.0), ("C", 0.0, None))], columns=["ticker", "date", "r", "above"])
+    stocks = pd.DataFrame({"ticker": ["A", "B", "C"], "sector": ["가", "나", "가"], "size": [1.0, 1.0, 1.0]})
+    sd = sectors.sector_daily(daily, stocks)
+    assert sd[(sd["sector"] == "가")]["above"].iloc[-1] == 100.0          # C has no 40-day history -> not counted
+    w = sd.pivot_table(index="date", columns="sector", values="ret")
+    r = sectors.rrg(w, ["가", "나"])
+    assert len(r["tails"]["가"]) == sectors.RRG_TAIL
+    assert r["tails"]["가"][-1][0] > 100 > r["tails"]["나"][-1][0]        # 가 leads the market, 나 lags

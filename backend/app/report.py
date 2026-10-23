@@ -129,10 +129,14 @@ MARKETS = {"미국": [("breadth20", "public_repo"), ("market_monitor_daily", "ya
            "크립토": [("breadth20", "crypto"), ("market_monitor_daily", "crypto")]}
 
 
+# A "broad" reading needs at least this many stocks: a calibrated 1-3 is noise, not breadth.
+MIN_N = 5
+
+
 def cnt(base: int, key: str, market: str, n) -> int:
     lv = CAL.get(market, {}).get(key, {}).get(base)
     n = n if n and not pd.isna(n) else US_N
-    return lv if lv is not None else max(1, math.ceil(base * min(1, n / US_N) - 1e-9))
+    return max(MIN_N, lv if lv is not None else math.ceil(base * min(1, n / US_N) - 1e-9))
 
 
 def conditions(r: dict, market: str) -> dict[str, str]:

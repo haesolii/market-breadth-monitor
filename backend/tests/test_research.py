@@ -1,3 +1,4 @@
+import numpy as np
 import datetime as dt
 
 import pandas as pd
@@ -55,8 +56,26 @@ def test_indicator_study_rank_correlations():
     ind = pd.DataFrame({"date": s["date"], "a": [float(i % 7) for i in range(80)], "b": [float(-(i % 7)) for i in range(80)],
                         "empty": [None] * 80})
     res = research.indicator_study(ind, s, ["a", "b", "empty"], days=60)
-    assert res["n"] == 60 and [x["key"] for x in res["stats"]] == ["a", "b"]      # all-empty indicator dropped
-    assert res["between"]["matrix"][0][1] == -1.0                                  # b mirrors a
+    assert res["n"] == 60 and [x["key"] for x in res["stats"]] == ["score", "a", "b"]  # all-empty indicator dropped
+    assert res["between"]["matrix"][1][2] == -1.0                                  # b mirrors a
     assert res["vs_returns"]["cols"] == ["과거 20일", "당일", "이후 5일", "이후 20일"]
-    a = res["stats"][0]
+    a = res["stats"][1]
     assert a["last"] == 79 % 7 and 0 < a["pctile"] <= 100
+
+
+def test_health_score_inverts_weak_side():
+    d = pd.date_range("2025-01-01", periods=100).date
+    ind = pd.DataFrame({"date": d, "up4": range(100), "down4": range(100)})
+    sc = research.health_score(ind, ["up4", "down4"])
+    assert sc.iloc[:59].isna().all() and sc.iloc[-1] == 50.0          # rising up4 (100) + rising down4 (0)
+    assert research.health_score(ind, ["up4"]).iloc[-1] == 100.0
+
+
+def test_lead_lag_finds_the_lead():
+    s = spy(200)
+    rng = np.random.default_rng(0)
+    s["close"] = 100 * np.cumprod(1 + rng.normal(0, 0.01, 200))
+    fwd = (s["close"].shift(-10) / s["close"].shift(-5) - 1).fillna(0)     # indicator = the 5-day move 5..10 days ahead
+    res = research.lead_lag(pd.DataFrame({"date": s["date"], "x": fwd}), s, "x")
+    assert res["peak"]["lag"] == 10 and res["peak"]["corr"] > 0.9
+    assert len(res["roll"]["r0"]) == len(res["dates"])
